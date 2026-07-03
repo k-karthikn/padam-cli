@@ -1,6 +1,4 @@
 import httpx
-import re
-import sys
 
 from rich.console import Console
 from urllib.parse import urljoin
