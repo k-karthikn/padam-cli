@@ -13,19 +13,27 @@
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"
     },
     "junk_titles": [
-        "moviesda33.com",
-        "Tamil A to Z Movies",
-        "Tamil Movies Collection",
-        "Tamil Single Parts Movies",
-        "Tamil HD Mobile Movies",
-        "Tamil Dubbed Movies",
-        "Tamil Daily Movies",
-        "Request a Movie",
-        "Latest Tamil Web Series",
-        "Latest Tamil Web Serie",
-        "Download Now",
-        "Latest Movies Updates",
-        "»",
-        "«"
-    ]
+            "moviesda33.com",
+            "Tamil A to Z Movies",
+            "Tamil Movies Collection",
+            "Tamil Single Parts Movies",
+            "Tamil HD Mobile Movies",
+            "Tamil Dubbed Movies",
+            "Tamil Daily Movies",
+            "Request a Movie",
+            "Latest Tamil Web Series",
+            "Latest Tamil Web Serie",
+            "Download Now",
+            "Latest Movies Updates",
+            "»",
+            "«",
+            "Check out our Latest Updates",
+            "Tamil A-Z Dubbed Movies",
+            "Tamil Yearly Dubbed Movies",
+            "Tamil Dubbed Collections",
+            "Tamil Genres Dubbed Movies",
+            "Tamil HD Dubbed Movies",
+            "Tamil Dubbed Web Series",
+            "Tamil Chinese Dubbed Movies"
+        ]
 }
