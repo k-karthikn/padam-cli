@@ -1,18 +1,26 @@
-from src.constant import MOVIESDA, ISAIDUB, HEADERS, MOVIESDA_HOME, DUBBED_MOVIES
+from src.config import Config
 from urllib.parse import urljoin
 from src.scraper import Scraper
 from InquirerPy import inquirer
 from InquirerPy.base import Choice
 from src.logger import Logger
 from src.utils import is_valid
-
 from rich.console import Console
 import sys
 import httpx
 
 console = Console()
+config = Config()
+config.load_config()
+
 class Search:
     def __init__(self):
+        self.search_query = None
+        self.search_year = None
+        self.list_latest = False
+        self.list_dubbed = False
+        self.isdubsearch = False
+
         self.search_url = None
         
         self.results = []
@@ -23,28 +31,27 @@ class Search:
         
         self.available_servers = None
         self.selected_server_url = None
-        
-        self.domain = None
-        self.isdubsearch = False
+
+        self.selected_domain = None
         self.scraper = Scraper()
 
     #parse the base url for search
     def parse_search_url(self, query:str, year: str | None=None) -> None:
         if year:
-            self.search_url = urljoin(ISAIDUB, f"/tamil-{year}-dubbed-movies/") if self.isdubsearch else urljoin(MOVIESDA,f"/tamil-{year}-movies/")
+            self.search_url = urljoin(config.isaidub, f"/tamil-{year}-dubbed-movies/") if self.isdubsearch else urljoin(config.moviesda,f"/tamil-{year}-movies/")
         else:
             href = query[0].lower()
-            self.search_url = urljoin(ISAIDUB, f"/tamil-atoz-dubbed-movies/{href}") if self.isdubsearch else urljoin(MOVIESDA ,f"/tamil-movies/{href}/")
+            self.search_url = urljoin(config.isaidub, f"/tamil-atoz-dubbed-movies/{href}") if self.isdubsearch else urljoin(config.moviesda ,f"/tamil-movies/{href}/")
         Logger.log(f"Searching url: {self.search_url}")
 
     #search in the parsed base url
     async def search_movie_url(self, query:str, year:str | None=None) -> list[dict[str, str]]:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30, headers=HEADERS) as client:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30, headers=config.headers) as client:
             pages = await self.scraper.get_pagination_pages(client, self.search_url)
             for page in pages:
                 links = await self.scraper.extract_links(client,page)
                 for text, href in links:
-                    movie = {"title": text, "movie_url": urljoin(self.domain,href)}
+                    movie = {"title": text, "movie_url": urljoin(self.selected_domain,href)}
                     if query.lower() in text.lower():
                         self.results.append(movie)
                         Logger.log(f" Found : [{movie["title"]}] --> {movie["movie_url"]}")
@@ -53,46 +60,42 @@ class Search:
         
     # used only for fetch latest added movies
     async def search_latest_movies(self) -> None:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30, headers=HEADERS) as client:
-            soup = await self.scraper.fetch_page(client, MOVIESDA_HOME)
+        async with httpx.AsyncClient(follow_redirects=True, timeout=30, headers=config.headers) as client:
+            soup = await self.scraper.fetch_page(client,config.moviesda_home_endpoint)
             for movie in soup.select("div.latest"):
                 title = movie.find("strong").get_text(strip=True)
                 link = movie.find("a", string="Download Now") or movie.find("a", class_= "green")
                 if not link:
                     continue
-                self.results.append({"title":title, "movie_url": urljoin(self.domain,link["href"])})
+                self.results.append({"title":title, "movie_url": urljoin(self.selected_domain,link["href"])})
             Logger.log(f"{len(self.results)} of Latest movies found")
 
     async def get_dubbed_movies(self) -> None:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=60, headers=HEADERS) as client:
-            pages = await self.scraper.get_pagination_pages(client, DUBBED_MOVIES)
+        async with httpx.AsyncClient(follow_redirects=True, timeout=60, headers=config.headers) as client:
+            pages = await self.scraper.get_pagination_pages(client, config.moviesda_dubbed_movies_endpoint)
             for page in pages:
                 links = await self.scraper.extract_links(client, page)
                 for text, href in links:
                     if is_valid(text, href):
-                        movie = {"title": text, "movie_url": urljoin(self.domain,href)}
+                        movie = {"title": text, "movie_url": urljoin(self.selected_domain,href)}
                         self.results.append(movie)
             Logger.log(f"{len(self.results)} of dubbed movies found")
 
 
     # Determine movie source
-    async def determine_movie_source(self,
-                                     query:str | None = None, 
-                                     year:str | None = None,
-                                     latest:bool | None = None,
-                                     dubbed:bool | None = None) -> None:
-        if query:
-            self.parse_search_url(query, year)
-            await self.search_movie_url(query, year)
+    async def determine_movie_source(self) -> None:
+        if self.search_query:
+            self.parse_search_url(self.search_query, self.search_year)
+            await self.search_movie_url(self.search_query, self.search_year)
             
             if not self.results:
                 console.print(f"[bold yellow] No movies found. Exiting....... [/bold yellow]")
                 Logger.log("No movies found. Exiting.......")
                 sys.exit(0)
                 return
-        elif latest:
+        elif self.list_latest:
             await self.search_latest_movies()
-        elif dubbed:
+        elif self.list_dubbed:
             await self.get_dubbed_movies()
 
     # Prompt movie selection
@@ -109,44 +112,21 @@ class Search:
         ).execute_async()
         Logger.log(f"Selected Movie : {self.selected_movie}")
 
-    # Load available servers
-    async def load_available_qualities(self) -> None:
-        first_letter = self.selected_movie["title"][0].lower()
-        await self.scraper.get_qualities(self.selected_movie["movie_url"], first_letter)
-        
-        available = {
-            "1080p": self.scraper.p1080,
-            "720p": self.scraper.p720,
-            "480p": self.scraper.p480,
-            "360p": self.scraper.p360
-        }
-
-        self.available_qualities = {k: v for k, v in available.items() if v}
-
     # Retrieve download servers
     async def retrieve_download_servers(self) -> None:
-        if self.available_qualities:
-            selected_quality = await inquirer.select(
-                message="Select the quality:",
-                choices=list(self.available_qualities.keys()),
+        resolver_results = await self.scraper.resolver(self.selected_movie["movie_url"])
+        while True:
+            if any("download" in text.lower() for text, _ in resolver_results): break
+
+            selected = await inquirer.select(
+                message="Select and click Enter:",
+                choices=[text for text, _ in resolver_results]
             ).execute_async()
-            
-            self.selected_quality_href = self.available_qualities[selected_quality]
-            self.available_servers = await self.scraper.get_download_informations(self.selected_quality_href)
-        else:
-            resolver_results = await self.scraper.resolver(self.selected_movie["movie_url"])
-            while True:
-                if any("download" in text.lower() for text, _ in resolver_results): break
 
-                selected = await inquirer.select(
-                    message="Select and click Enter:",
-                    choices=[text for text, _ in resolver_results]
-                ).execute_async()
-
-                next_href = dict(resolver_results)[selected]
-                Logger.log(f"Moving to next --> {next_href}" )
-                resolver_results = await self.scraper.resolver(next_href)
-            self.available_servers = await self.scraper.get_download_informations(self.scraper.resolver_current_href)
+            next_href = dict(resolver_results)[selected]
+            Logger.log(f"Moving to next --> {next_href}" )
+            resolver_results = await self.scraper.resolver(next_href)
+        self.available_servers = await self.scraper.get_download_informations(self.scraper.resolver_current_href)
 
     # Load and select servers
     async def prompt_server_selection(self) -> None:
@@ -163,27 +143,17 @@ class Search:
         console.print(f"[green]Selected Server: {self.selected_server_url}[/green]")
 
     # displays the results
-    async def show_results_tui(self, 
-                               query: str | None = None, 
-                               year: str | None = None, 
-                               latest:bool | None = None, 
-                               dubbed:bool | None = None,
-                               isdubsearch:bool | None = None 
-                               ) -> None:
-        
-        self.isdubsearch = isdubsearch
-        self.domain = ISAIDUB if self.isdubsearch else MOVIESDA
-        self.scraper.domain = self.domain
+    async def show_results_tui(self) -> None:
+        self.selected_domain = config.isaidub if self.isdubsearch else config.moviesda
+        self.scraper.selected_domain = self.selected_domain
+        self.scraper.headers = config.headers
+
         # 1. Determine movie source
-        await self.determine_movie_source(query, year, latest, dubbed)
+        await self.determine_movie_source()
 
         # 2. Prompt movie selection
         await self.prompt_movie_selection()
 
-        # 3. Load available video qualities
-        await self.load_available_qualities()
-
-        # 4. Retrieve download servers
         await self.retrieve_download_servers()  
 
         # 5. Validate and select download server
