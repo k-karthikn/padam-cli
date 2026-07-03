@@ -1,12 +1,13 @@
 import json
 import urllib.request
 import urllib.error
+from rich.console import Console
 
+console = Console()
 class Config:
-
     def __init__(self):
         self.config_url = "https://raw.githubusercontent.com/e-Zephyr/padam-cli/refs/heads/master/config/config.json"
-
+        
         # moviesda
         self.moviesda = None
         self.moviesda_home_endpoint = None
@@ -23,15 +24,16 @@ class Config:
         self.junks = None
 
     def fetch_config(self):
-            try:
-                with urllib.request.urlopen(self.config_url) as response:
-                    with open(self.config_path, 'wb') as out_file:
-                        out_file.write(response.read())
-            except urllib.error.URLError as e:
-                print(f"Error downloading config: {e}")
+            with console.status("[bold cyan]Fetching latest configuration...", spinner="dots"):
+                try:
+                    with urllib.request.urlopen(self.config_url) as response:
+                        with open(self.config_path, 'wb') as out_file:
+                            out_file.write(response.read())
+                    console.print("[bold green]✔[/] Configuration updated successfully!")
+                except urllib.error.URLError as e:
+                    console.print(f"[bold red]✖ Error downloading config:[/] {e}")
 
     def load_config(self):
-        self.fetch_config()
         with open('config/config.json', 'r') as file:
             config_data = json.load(file)
 
@@ -44,7 +46,3 @@ class Config:
             self.download_path = config_data["download_path"]
             self.headers = config_data.get("headers", {})
             self.junks = config_data.get("junk_titles", [])
-
-
-config = Config()
-config.load_config()
