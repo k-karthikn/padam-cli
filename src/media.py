@@ -3,13 +3,15 @@ import webbrowser
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from rich.console import Console
-from src.constant import DOWNLOAD_PATH
+from src.config import Config
 
 
 console = Console()
+config = Config()
+config.load_config()
 
 class Media:
-    def __init__(self, url: str, title: str | None = None, download_dir: str = DOWNLOAD_PATH):
+    def __init__(self, url: str, title: str | None = None, download_dir: str = config.download_path):
         self.url = url
         self.title = title
         self.download_dir = Path(download_dir).expanduser()
