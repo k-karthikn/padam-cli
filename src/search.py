@@ -52,7 +52,7 @@ class Search:
                 links = await self.scraper.extract_links(client,page)
                 for text, href in links:
                     movie = {"title": text, "movie_url": urljoin(self.selected_domain,href)}
-                    if query.lower() in text.lower():
+                    if query.lower() in text.lower() and is_valid(text,href):
                         self.results.append(movie)
                         Logger.log(f" Found : [{movie["title"]}] --> {movie["movie_url"]}")
 
@@ -114,19 +114,32 @@ class Search:
 
     # Retrieve download servers
     async def retrieve_download_servers(self) -> None:
-        resolver_results = await self.scraper.resolver(self.selected_movie["movie_url"])
-        while True:
-            if any("download" in text.lower() for text, _ in resolver_results): break
+            resolver_results = await self.scraper.resolver(self.selected_movie["movie_url"])
+            max_depth = 15
+            current_depth = 0
 
-            selected = await inquirer.select(
-                message="Select and click Enter:",
-                choices=[text for text, _ in resolver_results]
-            ).execute_async()
+            while current_depth < max_depth:
+                if not resolver_results:
+                    Logger.log("Error: Hit a dead end. No results found.")
+                    return
+                if any("download" in text.lower() for text, _ in resolver_results): 
+                    break
+                if len(resolver_results) > 1:
+                    selected = await inquirer.select(
+                        message="Select and click Enter:",
+                        choices=[text for text, _ in resolver_results]
+                    ).execute_async()
+                    next_href = next(href for text, href in resolver_results if text == selected)
+                    Logger.log(f"Moving to next --> {next_href}")
+                else:
+                    next_href = resolver_results[0][1]
+                resolver_results = await self.scraper.resolver(next_href)
+                current_depth += 1
+            if current_depth == max_depth:
+                Logger.log("Error: Max traversal depth reached without finding a download link.")
+                return
 
-            next_href = dict(resolver_results)[selected]
-            Logger.log(f"Moving to next --> {next_href}" )
-            resolver_results = await self.scraper.resolver(next_href)
-        self.available_servers = await self.scraper.get_download_informations(self.scraper.resolver_current_href)
+            self.available_servers = await self.scraper.get_download_informations(self.scraper.resolver_current_href)
 
     # Load and select servers
     async def prompt_server_selection(self) -> None:

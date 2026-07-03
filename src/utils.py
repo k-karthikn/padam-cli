@@ -16,7 +16,10 @@ def is_valid(text: str, href: str) -> bool:
 
     if re.fullmatch(r"Tamil \d{4} Movies", text):
         return False
-
+    
+    if re.fullmatch(r"Tamil \d{4} Dubbed Movies", text):
+        return False
+    
     if text in config.junks:
         return False
 
