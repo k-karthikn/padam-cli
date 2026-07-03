@@ -2,7 +2,7 @@
 padam-cli = "main:main"
 [project]
 name = "padam-cli"
-version = "0.4.4"
+version = "0.6.0"
 description = "browse and play tamil movies with in ur terminal"
 readme = "README.md"
 requires-python = ">=3.14"
