@@ -1,307 +1,395 @@
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Features](#features)
+- [Disclaimer](#disclaimer)
+- [Installation](#installation)
+  - [Prebuilt Binaries](#prebuilt-binaries)
+  - [Building from Source](#building-from-source)
+- [Download Methods](#download-methods)
+- [Media Playback](#media-playback)
+- [Usage](#usage)
+- [Examples](#examples)
+- [Limitations](#limitations)
+- [Contributing](#contributing)
+- [License](#license)
+
+# padam-cli
+
+`padam-cli` is an open-source command-line application for browsing, streaming, and downloading Tamil movies from supported public sources.
+
+It provides an interactive terminal interface for searching movies, viewing available releases, selecting video quality, and opening media links for streaming or downloading. Downloads can be performed using a web browser, `ffmpeg`, or `yt-dlp`, depending on your preferred workflow.
+
+The project is designed for users who prefer a terminal-based experience without relying on a graphical interface. It runs on Linux, Windows, and Android through Termux.
+
+## Quick Start
+
+```bash
+# Download the latest release
+chmod +x padam-cli
+./padam-cli list-latest
+
+# Search for dubbed movies
+./padam-cli -s Spider Man --dubbed
+
+# Search for a movies
+padam-cli -s vikram
+
+# Stream
+padam-cli -s vikram -p
+```
+
+## Features
+
+* Search Tamil movies by title.
+* Filter search results by release year.
+* Browse the latest available movie releases.
+* Search and browse Tamil dubbed movies.
+* View available video qualities before playback or download.
+* Stream movies directly from the terminal using `mpv`.
+* Download media using your preferred method:
+
+  * Web browser
+  * `ffmpeg`
+  * `yt-dlp`
+* Interactive terminal interface for selecting movies and download options.
+* Cross-platform support for Linux, Windows, and Termux.
+* Configurable download location.
+* Lightweight with minimal runtime dependencies.
+
 ## Disclaimer
 
-padam-cli is an open-source command-line tool that automates browsing and retrieving publicly accessible metadata and links from third-party websites.
+`padam-cli` is an open-source command-line tool that retrieves publicly available movie metadata and media links from third-party websites.
 
-This project does not host, store, distribute, stream, or upload any copyrighted media. All content, trademarks, and copyrights belong to their respective owners.
+The project does not host, store, upload, redistribute, or stream any copyrighted content. All media, trademarks, and other intellectual property remain the property of their respective owners.
 
-Users are solely responsible for ensuring that their use of this software complies with applicable laws, regulations, and the terms of service of any websites they access.
+Users are responsible for ensuring that their use of this software complies with applicable laws, regulations, and the terms of service of the websites they access.
 
-The author of this project is not responsible for how the software is used and does not encourage copyright infringement or unauthorized distribution of copyrighted material.
+This software is provided for educational and research purposes, without warranty of any kind. The author is not responsible for any misuse of the project or for any consequences resulting from its use.
 
-This project is provided for educational and research purposes only, without warranty of any kind.
+## Installation
 
-padam-cli is a terminal-based browser for movie metadata and publicly available links.
+### Prebuilt binaries
 
-Features:
+Precompiled binaries are available on the project's GitHub Releases page. They can be used without installing Python or any project dependencies.
 
-* Browse movie listings from supported sources
-* View movie metadata
-* Select available quality options
-* Open or process available media links
+#### Linux
 
-padam-cli does not host or redistribute media files.
-# Installation (Precompiled Binary)
-If you don't want to install Python or any dependencies, you can use the precompiled binary available from the latest release.
-## Linux
-1. Download the latest Linux binary from the **Releases** page.
-2. Make the binary executable:
+Download the binary that matches your system architecture, then make it executable:
+
 ```bash
 chmod +x padam-cli
 ```
-3. Move it to a directory in your `PATH`:
-**System-wide installation**
+
+Install it system-wide:
+
 ```bash
 sudo mv padam-cli /usr/local/bin/
 ```
-**User-only installation**
+
+Or install it for the current user:
+
 ```bash
 mkdir -p ~/.local/bin
 mv padam-cli ~/.local/bin/
 ```
-> Make sure `~/.local/bin` is included in your `PATH`.
-4. Verify the installation:
+
+If you installed it to `~/.local/bin`, ensure that directory is included in your `PATH`.
+
+Verify the installation:
+
 ```bash
 padam-cli --help
 ```
----
-## Windows
-1. Download the latest `padam-cli.exe` from the **Releases** page.
-2. Move the executable to any folder.
-3. Add that folder to your **Path** environment variable.
-4. Open a new Command Prompt or PowerShell window.
-5. Verify the installation:
+
+#### Windows
+
+Download `padam-cli.exe` from the latest release and place it in any directory.
+
+To run it from any terminal, add that directory to your `PATH` environment variable.
+
+Verify the installation:
+
 ```powershell
 padam-cli --help
 ```
----
-## Termux (Android)
-1. Download the latest ARM64 binary from the **Releases** page.
-2. Make it executable:
+
+#### Termux
+
+Download the ARM64 binary from the latest release.
+
+Make it executable:
+
 ```bash
 chmod +x padam-cli
 ```
-3. Move it to Termux's binary directory:
+
+Move it into Termux's binary directory:
+
 ```bash
 mv padam-cli $PREFIX/bin/
 ```
-4. Verify the installation:
+
+Verify the installation:
+
 ```bash
 padam-cli --help
 ```
----
-## Notes
-* Download the binary that matches your operating system and CPU architecture.
-* The precompiled binary does **not** require Python or project dependencies.
-* Some features require external tools:
-  * **yt-dlp** *(optional)* — Download videos using `yt-dlp`.
-  * **FFmpeg** *(optional)* — Download and process media using FFmpeg.
-  * **mpv** *(optional)* — Required only if you want to stream videos directly from the terminal.
-* If you don't install **mpv**, you can simply copy the generated video URL and play it using any media player or web browser of your choice.
-If you'd like, I can also make it look more like professional GitHub projects with tabs, callout blocks, and platform badges.
 
-# Installation(Linux)
-Installing **padam-cli** on Linux is simple.
-## 1. Install Optional Downloaders
-`padam-cli` works out of the box using your default web browser for downloads. However, installing `ffmpeg` and `yt-dlp` gives you more download options.
-### Arch Linux
+### Optional dependencies
+
+The prebuilt binary is fully functional on its own. The following programs enable additional features:
+
+| Dependency | Purpose                                 | Required |
+| ---------- | --------------------------------------- | :------: |
+| `mpv`      | Stream media directly from the terminal |    No    |
+| `ffmpeg`   | Download media using FFmpeg             |    No    |
+| `yt-dlp`   | Download media using yt-dlp             |    No    |
+
+If these tools are not installed, you can still copy the generated media URL and open it manually in a web browser or your preferred media player.
+
+## Building from source
+
+Building from source requires Python 3.14 or later.
+
+### Linux
+
+Install the optional runtime tools if you plan to stream or download media:
+
+**Arch Linux**
+
 ```bash
-sudo pacman -S yt-dlp ffmpeg
+sudo pacman -S ffmpeg yt-dlp mpv
 ```
-### Ubuntu / Debian
+
+**Ubuntu / Debian**
+
 ```bash
-sudo apt install yt-dlp ffmpeg
+sudo apt install ffmpeg yt-dlp mpv
 ```
-### Fedora
+
+**Fedora**
+
 ```bash
-sudo dnf install yt-dlp ffmpeg
+sudo dnf install ffmpeg yt-dlp mpv
 ```
-## Which Downloader Should You Use?
-You can choose whichever fits your workflow.
-* **yt-dlp**
-  * ⚡ Very fast startup
-  * 🐢 Usually slower download speed
-* **ffmpeg**
-  * 🐢 Slow startup (takes time to begin downloading)
-  * ⚡ Usually the fastest download speed
-* **Web Browser**
-  * ⚡ Instant startup
-  * 🚀 Standard download speed
-In reality, download speeds vary depending on the server. Sometimes the web browser can even reach **10+ MB/s**, while `ffmpeg` may spend a few seconds preparing the download. That's why **padam-cli lets you choose whichever downloader you prefer**.
-## 2. Install a Media Player
-Streaming doesn't require downloading the movie first.
-The recommended player is **mpv**.
-If you prefer another player (such as VLC), you'll need to copy the generated stream URL and open it manually in your preferred media player.
-### Arch Linux
-```bash
-sudo pacman -S mpv
-```
-### Ubuntu / Debian
-```bash
-sudo apt install mpv
-```
-### Fedora
-```bash
-sudo dnf install mpv
-```
-## 3. Clone the Repository
+
+Clone the repository:
+
 ```bash
 git clone https://github.com/e-Zephyr/padam-cli.git
 cd padam-cli
 ```
-Or download the project as a ZIP file and extract it.
-## 4. Run the Installer
-```bash
-chmod +x install.sh
-./install.sh
-```
-## 5. Add padam-cli to Your PATH
-For Fish shell:
-```bash
-fish_add_path ~/.local/share/bin
-```
-For Bash or Zsh:
-```bash
-export PATH="$HOME/.local/share/bin:$PATH"
-```
-(Add the above line to your shell configuration file if needed.)
-## 6. Verify the Installation
-```bash
-padam-cli -h
-```
-If the help menu appears, you're ready to use **padam-cli**.
 
+#### Using uv (Recommended)
 
-# Installation (Windows)
-There are two ways to build **padam-cli** on Windows.
-## Option 1: Using uv (Recommended)
-If you already have `uv` installed, simply clone the repository and run:
+```bash
+uv sync
+```
+
+#### Using pip
+
+Install the project dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Build the executable:
+
+```bash
+pyinstaller --clean --onefile --name padam-cli main.py
+```
+
+The compiled binary will be available in the `dist/` directory.
+
+### Windows
+
+Clone the repository:
+
+```bash
+git clone https://github.com/e-Zephyr/padam-cli.git
+cd padam-cli
+```
+
+#### Using uv (Recommended)
+
 ```bash
 uv sync
 uv run pyinstaller --clean --onefile --name padam-cli main.py
 ```
-The compiled executable will be available in the `dist` folder.
----
-## Option 2: Using Python + pip
-If you don't use `uv`, first install the required dependencies:
-```bash
-pip install beautifulsoup4 httpx InquirerPy lxml rich pyinstaller
-```
-Or install them individually:
-```text
-beautifulsoup4>=4.15.0
-httpx>=0.28.1
-InquirerPy>=0.3.4
-lxml>=6.1.1
-rich>=15.0.0
-```
-Then build the executable:
-```bash
-pyinstaller --clean --onefile --name padam-cli main.py
-```
-After the build finishes, you'll find the executable inside the `dist` folder.
 
-# Installation (Termux)
-> **Note:** `uv` is currently not supported on Termux for this project due to Python version compatibility. Install the dependencies manually.
-## 1. Install Python dependencies
-Install all required packages:
+#### Using pip
+
 ```bash
-pip install beautifulsoup4 httpx InquirerPy lxml rich pyinstaller
+pip install requirements.txt
 ```
-Or install them individually:
-```text
-beautifulsoup4>=4.15.0
-httpx>=0.28.1
-InquirerPy>=0.3.4
-lxml>=6.1.1
-rich>=15.0.0
-pyinstaller>=6.21.0
-```
-## 2. Resolve build errors (if any)
-If you encounter errors while installing **lxml** or other packages, install the required system packages first:
-```bash
-pkg install ldd libxml2 libxslt clang
-```
-Then run the `pip install` command again.
-## 3. Build the binary
-Compile the project into a standalone executable:
+
+Build the executable:
+
 ```bash
 pyinstaller --clean --onefile --name padam-cli main.py
 ```
-The compiled binary will be available in the `dist/` directory.
-## 4. Add the binary to your PATH
-Move the binary to Termux's binary directory:
+
+The executable will be generated in the `dist/` directory.
+
+### Termux
+
+> `uv` is currently not supported due to Python version compatibility. Install the dependencies manually.
+
+Install the required packages:
+
+```bash
+pkg install clang libxml2 libxslt
+```
+
+Install the Python dependencies:
+
+```bash
+pip install requirements.txt
+```
+
+Build the executable:
+
+```bash
+pyinstaller --clean --onefile --name padam-cli main.py
+```
+
+Install it:
+
 ```bash
 mv dist/padam-cli $PREFIX/bin/
 ```
-Or, if you prefer, move it to any directory that is included in your `PATH`.
-### Fish shell
-If you're using Fish, you can add your own directory to the `PATH`:
-```fish
-fish_add_path ~/.local/bin
-```
-Then move the binary there:
-```bash
-mkdir -p ~/.local/bin
-mv dist/padam-cli ~/.local/bin/
-```
-## 5. Verify the installation
+
+Verify the installation:
+
 ```bash
 padam-cli --help
 ```
-# Usage
-```
-usage: padam-cli [-h] [--dubbed] [-s MOVIE] [-y YEAR] [-p | -d [{list-latest,list-dubbed}]
-Browse, stream and download Tamil movies.
 
-positional arguments: {list-latest,list-dubbed} Show latest or dubbed movies
+## Download methods
 
-options:
-  -h, --help            show this help message and exit
-  --dubbed              Search movie in dubbed lists
-  -s, --search MOVIE    Search movie
-  -y, --year YEAR       Movie year
-  -p, --play            Stream movie
-  -d, --download        Download movie (default)
+`padam-cli` supports multiple download methods, allowing you to choose the one that best fits your workflow.
+
+| Method      | Description                                             | Best suited for                                             |
+| ----------- | ------------------------------------------------------- | ----------------------------------------------------------- |
+| Web Browser | Opens the direct media URL in your default web browser. | Users who prefer their browser's built-in download manager. |
+| `ffmpeg`    | Downloads media directly using FFmpeg.                  | Large downloads and HLS (`.m3u8`) streams.                  |
+| `yt-dlp`    | Downloads media using yt-dlp.                           | Sources supported by yt-dlp and advanced download options.  |
+
+The available download methods depend on the software installed on your system. If `ffmpeg` or `yt-dlp` is not available, `padam-cli` will continue to work using the remaining supported methods.
+
+Download performance depends on the media source, server response, network conditions, and the selected download method. No single method is consistently faster in every situation, so you can choose the one that works best for your use case.
+
+## Media playback
+
+`padam-cli` supports direct media playback through `mpv`. When the **Play** option is selected, the generated media URL is passed to `mpv`, allowing playback without downloading the file first.
+
+If `mpv` is not installed, you can still copy the generated media URL and open it manually in any media player or web browser that supports the media format.
+
+`mpv` is the recommended player because of its native support for network streams and wide range of supported audio and video formats.
+
+## Usage
+
 ```
-## Search Examples
-Search for all movies containing the word **karuppu**:
-```bash
+padam-cli [OPTIONS] [COMMAND]
+```
+
+### Commands
+
+| Command       | Description                                  |
+| ------------- | -------------------------------------------- |
+| `list-latest` | Display the latest available movie releases. |
+| `list-dubbed` | Display a list of available dubbed movies.   |
+
+### Options
+
+| Option                   | Description                                     |
+| ------------------------ | ----------------------------------------------- |
+| `-s`, `--search <movie>` | Search for a movie by title.                    |
+| `-y`, `--year <year>`    | Filter search results by release year.          |
+| `--dubbed`               | Search only dubbed movies.                      |
+| `-p`, `--play`           | Stream the selected movie using `mpv`.          |
+| `-d`, `--download`       | Download the selected movie (default behavior). |
+| `-h`, `--help`           | Display the help message and exit.              |
+
+### Notes
+
+* Searches are case-insensitive.
+* If neither `--play` nor `--download` is specified, the selected movie is downloaded by default.
+* Some titles that begin with numbers (for example, `24` or `96`) may require the release year to identify the correct movie.
+
+## Examples
+
+Search for a movie by title:
+
+```bash id="ejj4xu"
 padam-cli -s karuppu
 ```
-Search only the **2026** movies containing **karuppu**:
-```bash
+
+Search for a movie released in a specific year:
+
+```bash id="rmv9d5"
 padam-cli -s karuppu -y 2026
 ```
-Searches are **case-insensitive**, so the following are treated the same:
-```bash
-padam-cli -s karuppu
-padam-cli -s Karuppu
-padam-cli -s KARUPPU
+
+Stream a movie without downloading it:
+
+```bash id="uvh5zr"
+padam-cli -s karuppu -y 2026 --play
 ```
-## Download vs Stream
-If you don't specify `-p` or `-d`, **padam-cli downloads the movie by default**.
-To stream the movie instead of downloading it, pass the `-p` (or `--play`) option:
-```bash
-padam-cli -s karuppu -y 2026 -p
+
+Download a movie (default behavior):
+
+```bash id="abf38n"
+padam-cli -s karuppu -y 2026
 ```
-or
-```bash
-padam-cli --search karuppu --year 2026 --play
-```
-This will open the stream directly in **mpv** without downloading the movie.
-## Movies That Start With Numbers
-Some movie titles begin with numbers, such as **24** or **96**. In these cases, you should also specify the release year to avoid ambiguous results.
-```bash
-padam-cli -s 24 -y 2016
-```
-```bash
-padam-cli -s 96 -y 2018
-```
-## Latest Movies
-`padam-cli` can also show the latest movies added to the website.
-```bash
+
+List the latest available movie releases:
+
+```bash id="u0rgoa"
 padam-cli list-latest
 ```
-This fetches the latest movies available, including newly added OTT releases and theater prints.
 
-## Dubbed Movies
+Search only dubbed movies:
 
-There are two methods to find dubbed movies. 
+```bash id="a4qehn"
+padam-cli -s "Spider-Man" --dubbed
+```
 
-*   **Targeted Search (Recommended):** Append the `--dubbed` flag to your standard search query to find specific dubbed titles.
-    ```bash
-    padam-cli s <query> --dubbed
-    ```
-    > **Examples:** *Spider-Man (2004)*, *Pirates of the Caribbean 3 (2007)*
+Browse available dubbed movies:
 
-*   **Broad Listing:** View a general list of available dubbed movies. This command outputs a curated subset and is generally less useful than targeted searching.
-    ```bash
-    padam-cli list-dubbed
-    ```
-    > **Examples:** *Sunday (2008)*, *Plot Paramasivan (2026)*, *Phobia (2016)*, *2 Friends (2018)*
+```bash id="v53qpd"
+padam-cli list-dubbed
+```
 
-# Contribution
-Contributions are always welcome—and honestly, they're needed to make **padam-cli** better.
-Whether it's fixing bugs, adding new features, improving performance, or even correcting documentation, every contribution helps.
-If you're interested, feel free to open an issue, submit a pull request, or share your ideas.
-Thanks for checking out **padam-cli**. Hope you'll be part of the project
+Search for movies with numeric titles by specifying the release year:
+
+```bash id="1ovjlwm"
+padam-cli -s 24 -y 2016
+```
+
+```bash id="4wx6dq"
+padam-cli -s 96 -y 2018
+```
+
+## Limitations
+
+* `padam-cli` relies on publicly accessible third-party websites. Changes to those websites may temporarily affect functionality until the project is updated.
+* An active internet connection is required to search, stream, or download media.
+* The availability of movies, video qualities, and download methods depends on the source website.
+* Streaming requires `mpv` to be installed and available in your system `PATH`.
+* Some download methods require additional software, such as `ffmpeg` or `yt-dlp`.
+* The project currently focuses on Tamil movies and supported Tamil dubbed content.
+
+## Contributing
+
+Contributions are welcome. Whether it's reporting bugs, improving documentation, fixing issues, or adding new features, every contribution helps improve the project.
+
+If you encounter a bug or have a feature request, please open an issue before submitting a pull request for significant changes. This helps avoid duplicate work and provides an opportunity to discuss the proposed solution.
+
+Before submitting a pull request, ensure that your changes are well-tested and follow the existing project structure and coding style.
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE)
