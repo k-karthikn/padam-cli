@@ -1,5 +1,6 @@
 import subprocess
 import webbrowser
+import base64
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 from rich.console import Console
@@ -19,18 +20,27 @@ class Media:
         self.output_path = self.download_dir / self.filename
 
     def _generate_filename(self) -> str:
-        try:
-            query = parse_qs(urlparse(self.url).query)
-            if "path" in query:
-                return Path(query["path"][0]).name
-        except Exception:
-            pass
+            try:
+                query = parse_qs(urlparse(self.url).query)
+                
+                if "dl" in query:
+                    decoded_dl = base64.b64decode(query["dl"][0] + '==').decode('utf-8', errors='ignore')
+                    dl_query = parse_qs(decoded_dl)
+                    if "path" in dl_query:
+                        return Path(dl_query["path"][0]).name
 
-        name = Path(urlparse(self.url).path).name
-        if "." in name: return name
-        if self.title: return f"{self.title}.mp4"
-        return "movie.mp4"
+                if "path" in query:
+                    return Path(query["path"][0]).name
+            except Exception:
+                pass
 
+            name = Path(urlparse(self.url).path).name
+            if "." in name and not name.endswith(('.php', '.html', '.aspx')): 
+                return name
+                
+            if self.title: return f"{self.title}.mp4"
+            return "movie.mp4"
+    
     def download(self):
         self.download_dir.mkdir(parents=True, exist_ok=True)
         yt_dlp_cmd = ["yt-dlp",self.url,"-o", str(self.output_path)]
