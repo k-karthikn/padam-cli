@@ -20,7 +20,64 @@ Features:
 * Open or process available media links
 
 padam-cli does not host or redistribute media files.
-
+# Installation (Precompiled Binary)
+If you don't want to install Python or any dependencies, you can use the precompiled binary available from the latest release.
+## Linux
+1. Download the latest Linux binary from the **Releases** page.
+2. Make the binary executable:
+```bash
+chmod +x padam-cli
+```
+3. Move it to a directory in your `PATH`:
+**System-wide installation**
+```bash
+sudo mv padam-cli /usr/local/bin/
+```
+**User-only installation**
+```bash
+mkdir -p ~/.local/bin
+mv padam-cli ~/.local/bin/
+```
+> Make sure `~/.local/bin` is included in your `PATH`.
+4. Verify the installation:
+```bash
+padam-cli --help
+```
+---
+## Windows
+1. Download the latest `padam-cli.exe` from the **Releases** page.
+2. Move the executable to any folder.
+3. Add that folder to your **Path** environment variable.
+4. Open a new Command Prompt or PowerShell window.
+5. Verify the installation:
+```powershell
+padam-cli --help
+```
+---
+## Termux (Android)
+1. Download the latest ARM64 binary from the **Releases** page.
+2. Make it executable:
+```bash
+chmod +x padam-cli
+```
+3. Move it to Termux's binary directory:
+```bash
+mv padam-cli $PREFIX/bin/
+```
+4. Verify the installation:
+```bash
+padam-cli --help
+```
+---
+## Notes
+* Download the binary that matches your operating system and CPU architecture.
+* The precompiled binary does **not** require Python or project dependencies.
+* Some features require external tools:
+  * **yt-dlp** *(optional)* — Download videos using `yt-dlp`.
+  * **FFmpeg** *(optional)* — Download and process media using FFmpeg.
+  * **mpv** *(optional)* — Required only if you want to stream videos directly from the terminal.
+* If you don't install **mpv**, you can simply copy the generated video URL and play it using any media player or web browser of your choice.
+If you'd like, I can also make it look more like professional GitHub projects with tabs, callout blocks, and platform badges.
 
 # Installation(Linux)
 Installing **padam-cli** on Linux is simple.
@@ -123,19 +180,68 @@ pyinstaller --clean --onefile --name padam-cli main.py
 ```
 After the build finishes, you'll find the executable inside the `dist` folder.
 
-
+# Installation (Termux)
+> **Note:** `uv` is currently not supported on Termux for this project due to Python version compatibility. Install the dependencies manually.
+## 1. Install Python dependencies
+Install all required packages:
+```bash
+pip install beautifulsoup4 httpx InquirerPy lxml rich pyinstaller
+```
+Or install them individually:
+```text
+beautifulsoup4>=4.15.0
+httpx>=0.28.1
+InquirerPy>=0.3.4
+lxml>=6.1.1
+rich>=15.0.0
+pyinstaller>=6.21.0
+```
+## 2. Resolve build errors (if any)
+If you encounter errors while installing **lxml** or other packages, install the required system packages first:
+```bash
+pkg install ldd libxml2 libxslt clang
+```
+Then run the `pip install` command again.
+## 3. Build the binary
+Compile the project into a standalone executable:
+```bash
+pyinstaller --clean --onefile --name padam-cli main.py
+```
+The compiled binary will be available in the `dist/` directory.
+## 4. Add the binary to your PATH
+Move the binary to Termux's binary directory:
+```bash
+mv dist/padam-cli $PREFIX/bin/
+```
+Or, if you prefer, move it to any directory that is included in your `PATH`.
+### Fish shell
+If you're using Fish, you can add your own directory to the `PATH`:
+```fish
+fish_add_path ~/.local/bin
+```
+Then move the binary there:
+```bash
+mkdir -p ~/.local/bin
+mv dist/padam-cli ~/.local/bin/
+```
+## 5. Verify the installation
+```bash
+padam-cli --help
+```
 # Usage
 ```
-usage: padam-cli [-h] [-s MOVIE] [-y YEAR] [-p | -d] [{latest}]
-Browse, stream, and download Tamil movies.
-positional arguments:
-  {latest}            Show the latest movies
+usage: padam-cli [-h] [--dubbed] [-s MOVIE] [-y YEAR] [-p | -d [{list-latest,list-dubbed}]
+Browse, stream and download Tamil movies.
+
+positional arguments: {list-latest,list-dubbed} Show latest or dubbed movies
+
 options:
-  -h, --help          Show this help message
-  -s, --search MOVIE  Search for a movie
-  -y, --year YEAR     Filter by movie year
-  -p, --play          Stream the movie
-  -d, --download      Download the movie (default)
+  -h, --help            show this help message and exit
+  --dubbed              Search movie in dubbed lists
+  -s, --search MOVIE    Search movie
+  -y, --year YEAR       Movie year
+  -p, --play            Stream movie
+  -d, --download        Download movie (default)
 ```
 ## Search Examples
 Search for all movies containing the word **karuppu**:
@@ -174,14 +280,28 @@ padam-cli -s 96 -y 2018
 ## Latest Movies
 `padam-cli` can also show the latest movies added to the website.
 ```bash
-padam-cli latest
+padam-cli list-latest
 ```
 This fetches the latest movies available, including newly added OTT releases and theater prints.
+
+## Dubbed Movies
+
+There are two methods to find dubbed movies. 
+
+*   **Targeted Search (Recommended):** Append the `--dubbed` flag to your standard search query to find specific dubbed titles.
+    ```bash
+    padam-cli s <query> --dubbed
+    ```
+    > **Examples:** *Spider-Man (2004)*, *Pirates of the Caribbean 3 (2007)*
+
+*   **Broad Listing:** View a general list of available dubbed movies. This command outputs a curated subset and is generally less useful than targeted searching.
+    ```bash
+    padam-cli list-dubbed
+    ```
+    > **Examples:** *Sunday (2008)*, *Plot Paramasivan (2026)*, *Phobia (2016)*, *2 Friends (2018)*
 
 # Contribution
 Contributions are always welcome—and honestly, they're needed to make **padam-cli** better.
 Whether it's fixing bugs, adding new features, improving performance, or even correcting documentation, every contribution helps.
 If you're interested, feel free to open an issue, submit a pull request, or share your ideas.
 Thanks for checking out **padam-cli**. Hope you'll be part of the project
-
-[for more details see this image](arc-plans/padam-cli.png)
