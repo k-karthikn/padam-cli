@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.28.1",
     "inquirerpy>=0.3.4",
     "lxml>=6.1.1",
+    "maturin>=1.14.1",
     "rich>=15.0.0",
 ]
 
