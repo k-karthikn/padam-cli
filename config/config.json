@@ -1,7 +1,7 @@
 {
     "domains": {
         "moviesda": "https://moviezda.net",
-        "isaidub": "https://isaidub.ceo"
+        "isaidub": "https://isaidub.com"
     },
     "config_url": "https://raw.githubusercontent.com/e-Zephyr/padam-cli/refs/heads/master/config/config.json",
     "download_path": "~/Downloads/",
