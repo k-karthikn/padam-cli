@@ -1,4 +1,6 @@
 $ErrorActionPreference = "Stop"
+Push-Location $PSScriptRoot
+try {
 
 Write-Host "Building padam-cli binary..."
 
@@ -20,3 +22,6 @@ Write-Host "Installed to $installDir" -ForegroundColor Green
 Write-Host ""
 Write-Host "Add this directory to your PATH:"
 Write-Host $installDir
+} finally {
+    Pop-Location
+}

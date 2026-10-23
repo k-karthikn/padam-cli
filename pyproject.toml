@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=82"]
+build-backend = "setuptools.build_meta"
+
 [project.scripts]
 padam-cli = "main:main"
 [project]
@@ -5,15 +9,20 @@ name = "padam-cli"
 version = "0.6.1"
 description = "browse and play tamil movies with in ur terminal"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.10"
 dependencies = [
     "beautifulsoup4>=4.15.0",
     "httpx>=0.28.1",
     "inquirerpy>=0.3.4",
     "lxml>=6.1.1",
-    "maturin>=1.14.1",
     "rich>=15.0.0",
 ]
+
+[tool.setuptools]
+py-modules = ["main"]
+
+[tool.setuptools.packages.find]
+include = ["src*"]
 
 [dependency-groups]
 dev = [

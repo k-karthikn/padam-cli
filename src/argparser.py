@@ -26,6 +26,7 @@ class ArgParse:
         # search
         parser.add_argument(
             "-s", "--search",
+            nargs="+",
             metavar="MOVIE",
             help="Search movie"
         )
@@ -57,8 +58,16 @@ class ArgParse:
 
     def parse(self):
         args = self.parser.parse_args()
+        if args.command and args.search:
+            self.parser.error("Choose a command or --search, not both.")
+        if args.year and not args.search:
+            self.parser.error("--year requires --search.")
+        if args.dubbed and not args.search:
+            self.parser.error("--dubbed requires --search.")
+        if not args.command and not args.search:
+            self.parser.error("Enter --search MOVIE, list-latest, or list-dubbed.")
 
-        self.query = args.search
+        self.query = " ".join(args.search) if args.search else None
         self.year = args.year
         self.isdubsearch = args.dubbed
         self.latest = args.command == "list-latest"

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -e
+cd "$(dirname "${BASH_SOURCE[0]}")"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -25,7 +26,7 @@ fi
 # Clean up local repository build files if they exist
 if [ -d "dist" ] || [ -d "build" ]; then
     echo "Cleaning up local build and dist directories..."
-    rm -rf dist build *.spec
+    rm -rf dist build
 fi
 
 # Remind the user about their shell configuration file

@@ -4,11 +4,11 @@ pkgver=0.6.1
 pkgrel=1
 pkgdesc="Browse and play Tamil movies within your terminal"
 arch=('x86_64')
-url="https://github.com/e-Zephyr/padam-cli.git"
+url="https://github.com/k-karthikn/padam-cli"
 license=('MIT')
 depends=('glibc') 
 makedepends=('python' 'uv')
-source=("$pkgname-$pkgver.tar.gz::https://github.com/e-Zephyr/padam-cli/archive/refs/tags/v$pkgver.tar.gz")
+source=("$pkgname-$pkgver.tar.gz::https://github.com/k-karthikn/padam-cli/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('SKIP')
 
 build() {

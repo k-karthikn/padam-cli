@@ -1,93 +1,218 @@
+"""Bounded HTTP fetching and HTML traversal for the supported catalogues."""
+
+import asyncio
+import html
+import re
+from dataclasses import dataclass
+from urllib.parse import parse_qs, unquote, urlencode, urlsplit
+
 import httpx
-
-from rich.console import Console
-from urllib.parse import urljoin
 from bs4 import BeautifulSoup
-from src.logger import Logger
-from src.utils import is_valid
 
-console = Console()
+from src.logger import Logger
+from src.utils import is_valid, secure_url
+
+
+class ScrapeError(RuntimeError):
+    def __init__(self, url: str, reason: str):
+        self.url = url
+        super().__init__(f"Could not load {url}: {reason}")
+
+
+@dataclass(frozen=True)
+class Link:
+    title: str
+    url: str
+    referer: str = ""
+
+
+@dataclass
+class Page:
+    url: str
+    soup: BeautifulSoup | None
+    media_type: str = ""
+    disposition: str = ""
+
+    @property
+    def is_media(self) -> bool:
+        if self.media_type in {"text/html", "application/xhtml+xml"}:
+            return False
+        path = unquote(urlsplit(self.url).path).lower()
+        return self.media_type.startswith("video/") or self.media_type in {
+            "application/octet-stream", "application/mp4", "application/vnd.apple.mpegurl",
+            "application/x-mpegurl",
+        } or path.endswith((".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v", ".m3u8"))
+
 
 class Scraper:
-    def __init__(self):
-        self.selected_domain = None
-        self.resolver_current_href = None
-        self.headers = None
+    PAGE_LIMIT = 2_000_000
+    REDIRECT_LIMIT = 10
+    TRANSIENT_STATUS = {429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
 
-    # Fetch the pages
-    async def fetch_page(self,client: httpx.AsyncClient, url: str) -> BeautifulSoup | None:
+    async def fetch_page(self, client: httpx.AsyncClient, url: str, referer: str = "") -> Page:
+        if secure_url(url, url) != url:
+            raise ScrapeError(url, "only HTTPS source links are supported")
+        for attempt in range(2):
+            try:
+                return await self._fetch_once(client, url, referer)
+            except (httpx.HTTPError, UnicodeError) as exc:
+                retryable = isinstance(exc, httpx.TransportError) or (
+                    isinstance(exc, httpx.HTTPStatusError) and
+                    exc.response.status_code in self.TRANSIENT_STATUS)
+                if retryable and attempt == 0:
+                    await asyncio.sleep(0.4)
+                    continue
+                reason = str(exc).strip() or type(exc).__name__
+                Logger.log(f"Fetch failed: {url}: {reason}")
+                raise ScrapeError(url, reason) from exc
+        raise AssertionError("unreachable")
 
-        try:
-            response = await client.get(url)
-            response.raise_for_status()
+    async def _fetch_once(self, client: httpx.AsyncClient, url: str, referer: str) -> Page:
+        headers = {"Referer": referer} if referer else None
+        current = url
+        for _ in range(self.REDIRECT_LIMIT):
+            async with client.stream("GET", current, headers=headers,
+                                     follow_redirects=False) as response:
+                if response.is_redirect:
+                    target = secure_url(str(response.url), response.headers.get("location", ""))
+                    if target is None:
+                        raise ScrapeError(current, "source redirected to an insecure or missing URL")
+                    # The gateway's Location is already the usable media URL. Opening a
+                    # large CDN response here can time out before playback/download starts.
+                    if Page(target, None).is_media:
+                        return Page(target, None)
+                    current = target
+                    continue
+                response.raise_for_status()
+                final_url = str(response.url)
+                if secure_url(final_url, final_url) != final_url:
+                    raise ScrapeError(url, "source redirected to an insecure URL")
+                media_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
+                page = Page(final_url, None, media_type,
+                            response.headers.get("content-disposition", ""))
+                if page.is_media:
+                    return page
+                chunks = bytearray()
+                async for chunk in response.aiter_bytes():
+                    chunks.extend(chunk)
+                    if len(chunks) > self.PAGE_LIMIT:
+                        raise ScrapeError(url, "page exceeds 2 MB")
+                encoding = response.encoding or "utf-8"
+                page.soup = BeautifulSoup(chunks.decode(encoding, errors="replace"), "lxml")
+                return page
+        raise ScrapeError(url, "too many HTTP redirects")
 
-            return BeautifulSoup(response.text, "lxml")
-        except Exception as e:
-            Logger.log(f"Failed to fetch {url}: {e}")
-            return None
-        
-    # Extract the links from pages
-    async def extract_links(self, client: httpx.AsyncClient, url: str) -> list[tuple[str,str]]:
-        soup = await self.fetch_page(client, url) 
+    @staticmethod
+    def links(page: Page, selector: str, junk_titles=()) -> list[Link]:
+        if page.soup is None:
+            return []
+        found = {}
+        for anchor in page.soup.select(selector):
+            url = secure_url(page.url, anchor.get("href", ""))
+            title = anchor.get_text(" ", strip=True)
+            if url and url != page.url and is_valid(title, anchor.get("href", ""), junk_titles):
+                found.setdefault(url, Link(title, url, page.url))
+        return list(found.values())
 
-        if not soup:
-            console.print("[bold yellow]There is a problem in extracting links[/bold yellow]")
-            Logger.log("Soup Not Found: scaraper.py extract_links method")
-        return [ ( a.get_text(strip=True) or "[No Text]", a["href"] ) for a in soup.find_all("a", href=True) ]
-        Logger.log("Links Extracted sucessfuly")
+    def entries(self, page: Page, junk_titles=()) -> list[Link]:
+        return [link for link in self.links(page, ".f a[href], .folder a[href]", junk_titles)
+                if link.title.casefold() not in {"sms", "facebook", "twitter", "whatsapp", "share"}]
 
-    #Page navigation
-    async def get_pagination_pages(self, client:httpx.AsyncClient, url:str) -> list[str]:
-        links = await self.extract_links(client, url)
-        pages = {url}
+    def pages(self, page: Page) -> list[str]:
+        if page.soup is None:
+            return []
+        host = urlsplit(page.url).hostname
+        found = {}
+        for anchor in page.soup.select(".pagination a[href], .pagecontent a[href], a[rel=next]"):
+            url = secure_url(page.url, anchor.get("href", ""))
+            title = anchor.get_text(" ", strip=True).casefold()
+            query = parse_qs(urlsplit(url).query) if url else {}
+            is_page = (title.isdigit() or title in {"next", "previous", "prev", "»", "«"}
+                       or "next" in anchor.get("rel", []) or "page" in query)
+            if url and is_page and urlsplit(url).hostname == host:
+                found[url] = None
+        return list(found)
 
-        for text, href in links:
-            if text.isdigit():
-                pages.add(urljoin(self.selected_domain,href))
-        Logger.log(f"{len(pages)} pages found")
-        return sorted(pages)
+    def choices(self, page: Page, junk_titles=()) -> list[Link]:
+        downloads = [link for link in self.links(page, ".dlink a[href], a.coral[href]")
+                     if "watch" not in link.title.casefold() and
+                     "play online" not in link.title.casefold()]
+        if downloads:
+            return downloads
+        folders = self.entries(page, junk_titles)
+        if folders:
+            return folders
+        if page.soup is None:
+            return []
 
-    # Resolve when something failed in scraping
-    async def resolver(self, href: str):
-        self.resolver_current_href = href
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30,headers=self.headers)as client:
-            links = await self.extract_links(client, urljoin(self.selected_domain, href))
-            results = [(text, href) for text, href in links if is_valid(text,href)]
-            return results
+        found: dict[str, Link] = {}
 
+        def add(raw: str | None, title: str) -> None:
+            url = secure_url(page.url, html.unescape(raw or ""))
+            if url and url != page.url:
+                found.setdefault(url, Link(title.strip() or "Download link", url, page.url))
 
-    #fetch the downloable mp3 or m3u8 urls
-    async def get_download_links(self, download_page_link: str) -> list[str]:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30,headers=self.headers)as client:
-            soup = await self.fetch_page(client, download_page_link)
-            links = [link["href"] for link in soup.select("div.dlink a")]
-            Logger.log(f"Links found : {links} in scraper.py get_dowlnoad_links method")
+        # Other common templates use a button, a bare download anchor, or a media tag.
+        for anchor in page.soup.select(
+            "a[download][href], a.download[href], a[class*='download'][href], "
+            "a[class*='server'][href], .download a[href], .server a[href], "
+            "a.btn[href], a.button[href]"):
+            add(anchor.get("href"), anchor.get_text(" ", strip=True) or anchor.get("aria-label", ""))
+        for anchor in page.soup.select("a[href]"):
+            title = anchor.get_text(" ", strip=True)
+            href = anchor.get("href", "")
+            if re.search(r"download|server|quality|get link|get url|continue|click here|720p|1080p|360p|\.mp4|\.mkv|\.m3u8|/file/", title + " " + href, re.I):
+                add(href, title or anchor.get("aria-label", ""))
+        if found:
+            return list(found.values())
 
-            dlinks = await self.fetch_page(client, links[0])
-            download_links = [link["href"] for link in dlinks.select("div.dlink a")]
-            Logger.log(f"download_links = {download_links}")
-            
-            filtered_download_links = list(set([link for link in download_links if link.endswith((".mp4", ".m3u8")) or "cdn" in link or "dub" in link]))
-            Logger.log(f"filtered = {filtered_download_links}")
-            
-            return filtered_download_links
-        
-    #used to crawling to the downloadpage
-    async def get_download_informations(self, quality_href) -> list[str]:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=30, headers=self.headers) as client:
-            Logger.log(f"processing href : {quality_href} in scraper.py get_download_information method")
-            soup = await self.fetch_page(client, urljoin(self.selected_domain, quality_href))
-            download_info_page_link = soup.find("a", class_ = "coral")
-            
-            if download_info_page_link:
-                Logger.log(f"download_info_page_link found : {download_info_page_link}")
-                dlinks = await self.fetch_page(client, urljoin(self.selected_domain, download_info_page_link["href"]))
-            else:
-                Logger.log(f"download_info_page_link Not found : {download_info_page_link}")
-                Logger.log(f"Now using resolver_current_href: {self.resolver_current_href}")
-                dlinks = await self.fetch_page(client, urljoin(self.selected_domain, self.resolver_current_href))
+        for media in page.soup.select("video[src], source[src]"):
+            add(media.get("src"), "Video stream")
+        for meta in page.soup.select("meta[property='og:video'][content], meta[property='og:video:url'][content]"):
+            add(meta.get("content"), "Video stream")
+        for form in page.soup.select("form[action]"):
+            label = form.get_text(" ", strip=True)
+            action = form.get("action", "")
+            if (form.get("method", "get").casefold() == "get" and
+                    re.search(r"download|server|file|continue|get link", label + " " + action, re.I)):
+                fields = [(item.get("name"), item.get("value", ""))
+                          for item in form.select("input[type='hidden'][name]")]
+                query = urlencode(fields)
+                add(action + (("&" if "?" in action else "?") + query if query else ""),
+                    label or "Continue")
+        for element in page.soup.select("[data-url], [data-href], [onclick]"):
+            add(element.get("data-url") or element.get("data-href"),
+                element.get_text(" ", strip=True) or "Continue")
+            onclick = element.get("onclick", "")
+            match = re.search(r"(?:location(?:\.href)?\s*=|location\.(?:assign|replace)\(|window\.open\()\s*['\"]([^'\"]+)", onclick)
+            if match:
+                add(match.group(1), element.get_text(" ", strip=True) or "Continue")
+        for meta in page.soup.select("meta[http-equiv]"):
+            if meta.get("http-equiv", "").casefold() == "refresh":
+                match = re.search(r"url\s*=\s*['\"]?([^'\";]+)", meta.get("content", ""), re.I)
+                if match:
+                    add(match.group(1).strip(), "Continue")
+        for script in page.soup.select("script:not([src])"):
+            source = script.string or ""
+            for match in re.finditer(r"(?:location(?:\.href)?\s*=|location\.(?:assign|replace)\(|window\.open\()\s*['\"]([^'\"]+)", source[:100_000]):
+                add(match.group(1), "Continue")
+        if found:
+            return list(found.values())
 
-            file_download_page_links = [link["href"] for link in dlinks.select("div.dlink a")]
-            movie_download_links = await self.get_download_links(file_download_page_links[0])
+        for frame in page.soup.select("iframe[src]"):
+            add(frame.get("src"), "Embedded player")
+        return list(found.values())
 
-            return movie_download_links
+    def latest(self, page: Page) -> list[Link]:
+        if page.soup is None:
+            return []
+        found = {}
+        for card in page.soup.select("div.latest"):
+            strong = card.find("strong")
+            anchor = card.find("a", string="Download Now") or card.find("a", class_="green")
+            if strong is None or anchor is None:
+                continue
+            url = secure_url(page.url, anchor.get("href", ""))
+            if url:
+                found.setdefault(url, Link(strong.get_text(" ", strip=True), url, page.url))
+        return list(found.values())

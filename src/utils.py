@@ -1,26 +1,30 @@
+"""Small source-independent validation helpers."""
+
 import re
-from src.config import Config
+from urllib.parse import urljoin, urlsplit
 
-config = Config()
-config.load_config()
 
-def is_valid(text: str, href: str) -> bool:
-    if href in {"/", "#"}:
-        return False
+def secure_url(base: str, href: str) -> str | None:
+    if not isinstance(href, str) or not href or href.startswith("#") or any(ord(char) < 32 for char in href):
+        return None
+    try:
+        url = urljoin(base, href)
+        parts = urlsplit(url)
+        if parts.scheme != "https" or not parts.hostname or parts.username or parts.password:
+            return None
+        _ = parts.port
+    except ValueError:
+        return None
+    return parts._replace(fragment="").geturl()
 
-    if re.fullmatch(r"[A-Z]", text):
-        return False
 
-    if re.fullmatch(r"\d+", text):
-        return False
+def normalized(text: str) -> str:
+    return " ".join(re.findall(r"[^\W_]+", text.casefold(), re.UNICODE))
 
-    if re.fullmatch(r"Tamil \d{4} Movies", text):
-        return False
-    
-    if re.fullmatch(r"Tamil \d{4} Dubbed Movies", text):
-        return False
-    
-    if text in config.junks:
-        return False
 
+def is_valid(text: str, href: str, junk_titles=()) -> bool:
+    if not text.strip() or href in {"", "/", "#"} or text.strip() in junk_titles:
+        return False
+    if re.fullmatch(r"[A-Za-z]|\d+|Tamil \d{4}(?: Dubbed)? Movies", text.strip(), re.I):
+        return False
     return True

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -e
+cd "$(dirname "${BASH_SOURCE[0]}")"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -21,6 +22,7 @@ uv run pyinstaller --onefile --name padam-cli main.py
 
 # Define install directory
 INSTALL_DIR="$HOME/.local/bin"
+mkdir -p "$INSTALL_DIR"
 
 # Move the compiled binary
 echo "Installing to $INSTALL_DIR..."
