@@ -124,6 +124,34 @@ class Search:
             raise ScrapeError(root, "invalid dubbed catalogue path")
         return await self._collect(client, start, referer=root)
 
+    @staticmethod
+    def _same_listing(url: str, first_url: str) -> bool:
+        """Keep crawling within one listing: same path, or a numeric path suffix.
+
+        Mirrors TamizhFlix's encodedPath rule: `/season/v/2` and `/season/v/page/2`
+        belong to `/season/v`, but `/season/v2/` and other hosts do not.
+        """
+        first = urlsplit(first_url)
+        candidate = urlsplit(url)
+        if candidate.hostname != first.hostname:
+            return False
+        if candidate.path == first.path:
+            return True
+        prefix = first.path.rstrip("/") + "/"
+        if not candidate.path.startswith(prefix):
+            return False
+        suffix = candidate.path[len(prefix):].rstrip("/")
+        return bool(re.fullmatch(r"(?:page/)?\d+", suffix))
+
+    @staticmethod
+    def _page_label(url: str) -> str:
+        """Label an unreached page from `?page=` or a path-style page segment."""
+        parts = urlsplit(url)
+        number = parse_qs(parts.query).get("page", [None])[0]
+        if not number:
+            number = next((segment for segment in reversed(parts.path.split("/")) if segment), "?")
+        return number or "?"
+
     async def _paginated_choices(self, client: httpx.AsyncClient, first_page,
                                  first_choices: list[Link]) -> list[Link]:
         """Include episode/file choices on later pages of a release listing."""
@@ -135,10 +163,9 @@ class Search:
         pending = deque(self.scraper.pages(first_page))
         visited = {first_page.url}
         unavailable = []
-        original_path = urlsplit(first_page.url).path
         while pending and len(visited) < self.MAX_CHOICE_PAGES:
             url = pending.popleft()
-            if url in visited or urlsplit(url).path != original_path:
+            if url in visited or not self._same_listing(url, first_page.url):
                 continue
             visited.add(url)
             try:
@@ -155,9 +182,9 @@ class Search:
                     pending.append(next_url)
         if unavailable or pending:
             console.print("[yellow]Some episode pages could not be loaded. You can open them from the list.[/yellow]")
-            for url in unavailable + list(pending):
-                number = parse_qs(urlsplit(url).query).get("page", ["?"])[0]
-                found.setdefault(url, Link(f"Open episode page {number}", url, first_page.url))
+            for url in dict.fromkeys(unavailable + list(pending)):
+                found.setdefault(url, Link(f"Open episode page {self._page_label(url)}",
+                                           url, first_page.url))
         result = list(found.values())
         if not unavailable and not pending:
             self.cache.save(cache_key, result)
@@ -176,7 +203,8 @@ class Search:
                 if page.is_media:
                     return Link(current.title, page.url, current.referer)
                 choices = self.scraper.choices(page, self.config.junks)
-                if self.scraper.pages(page) and self.scraper.entries(page, self.config.junks):
+                pages = self.scraper.pages(page)
+                if pages and choices:
                     choices = await self._paginated_choices(client, page, choices)
                 choices = [link for link in choices
                            if link.url not in visited]
