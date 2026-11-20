@@ -230,12 +230,12 @@ jobs:
             runner: ubuntu-latest
             suffix: linux-x86_64
             ext: ""
-            image: quay.io/pypa/manylinux_2_28_x86_64
+            image: ghcr.io/yt-dlp/manylinux_2_28_x86_64-shared
           - target: linux-aarch64
             runner: ubuntu-24.04-arm
             suffix: linux-aarch64
             ext: ""
-            image: quay.io/pypa/manylinux_2_28_aarch64
+            image: ghcr.io/yt-dlp/manylinux_2_28_aarch64-shared
           - target: windows-x86_64
             runner: windows-latest
             suffix: windows-x86_64
@@ -259,9 +259,10 @@ jobs:
           echo "ARTIFACT_NAME=${BASE_NAME}${{ matrix.ext }}" >> "$GITHUB_ENV"
           echo "ARTIFACT_PATH=dist/${BASE_NAME}${{ matrix.ext }}" >> "$GITHUB_ENV"
 
-      # manylinux_2_28 = glibc 2.28, so both Linux binaries also run on older
-      # distros (Debian 10+, Ubuntu 18.10+, RHEL 8+). PyInstaller builds with
-      # the container's own Python, so no host setup-python is needed here.
+      # yt-dlp's manylinux_2_28 *-shared images = glibc 2.28 (Debian 10+,
+      # Ubuntu 18.10+, RHEL 8+) AND a CPython built with --enable-shared.
+      # PyInstaller cannot use the static /opt/python/cp* interpreters in the
+      # upstream pypa images ("Python was built without a shared library").
       - name: Build Linux binary in manylinux container (glibc 2.28)
         if: matrix.target == 'linux-x86_64' || matrix.target == 'linux-aarch64'
         shell: bash
@@ -272,8 +273,8 @@ jobs:
             -e BASE_NAME="$BASE_NAME" \
             "${{ matrix.image }}" bash -c '
               set -euxo pipefail
-              PY=/opt/python/cp314-cp314/bin/python
-              if [ ! -x "$PY" ]; then PY=/opt/python/cp313-cp313/bin/python; fi
+              PY=/opt/shared-cpython-3.14/bin/python3.14
+              if [ ! -x "$PY" ]; then PY=/opt/shared-cpython-3.13/bin/python3.13; fi
               "$PY" -m pip install --upgrade pip setuptools wheel
               "$PY" -m pip install . "pyinstaller>=6.21.0"
               "$PY" -m PyInstaller --clean --noconfirm --onefile --name "$BASE_NAME" main.py
@@ -325,6 +326,10 @@ jobs:
                 libxml2 libxslt libandroid-sysv-semaphore
               export LDFLAGS="-landroid-sysv-semaphore"
               export PYINSTALLER_COMPILE_BOOTLOADER=1
+              # Termux clang marks strtok() deprecated; the PyInstaller waf
+              # build adds -Werror when compiling its bootloader, which turns
+              # that warning into a hard failure. Disable the warning category.
+              export CFLAGS="-Wno-deprecated-declarations"
               python -m pip install --upgrade pip setuptools wheel
               python -m pip install --no-binary=pyinstaller "pyinstaller>=6.21.0"
               python -m pip install "beautifulsoup4>=4.15.0" "httpx>=0.28.1" \
