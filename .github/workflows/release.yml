@@ -318,6 +318,9 @@ jobs:
             termux/termux-docker:aarch64 \
             /entrypoint.sh bash -c '
               set -euxo pipefail
+              # The Termux entrypoint re-execs via `env -i` with a whitelist,
+              # so docker -e variables are dropped. Pass it as an argument.
+              BASE_NAME="$1"
               export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
               export TMPDIR="$PREFIX/tmp"
               mkdir -p "$TMPDIR"
@@ -337,7 +340,7 @@ jobs:
               python -m pip install --no-deps .
               python -m PyInstaller --clean --noconfirm --onefile --name "$BASE_NAME" main.py
               test -f "dist/$BASE_NAME"
-            '
+            ' termux-build "$BASE_NAME"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
