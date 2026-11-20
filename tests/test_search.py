@@ -191,5 +191,96 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, len(calls))
 
 
+    async def test_path_style_pagination_collects_all_episodes_and_labels_failures(self):
+        calls = []
+
+        def handler(request):
+            calls.append(str(request.url))
+            path = request.url.path
+            if path == "/show":
+                return httpx.Response(200, text="<div class=f><a href='/season/v'>Season 01</a></div>")
+            if path == "/season/v":
+                return httpx.Response(200, text="""<div class=dlink>
+                    <a href='/ep1'>Epi 1</a><a href='/ep1'>Epi 1 duplicate</a></div>
+                    <div class=pagination><a href='/season/v/2'>2</a>
+                    <a href='/season/v2'>3</a></div>""")
+            if path == "/season/v/2":
+                return httpx.Response(200, text="""<div class=dlink><a href='/ep2'>Epi 2</a></div>
+                    <div class=pagination><a href='/season/v/3'>3</a></div>""")
+            if path == "/season/v/3":
+                return httpx.Response(503)
+            if path == "/ep2":
+                return httpx.Response(302, headers={"Location": "https://cdn.example/ep2.mp4"})
+            raise AssertionError(f"Unexpected request: {request.url}")
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = Config(Path(directory) / "missing", Path(directory) / "cache")
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                with patch("src.search.inquirer.fuzzy") as fuzzy:
+                    fuzzy.return_value.execute_async = AsyncMock(return_value=1)
+                    media = await Search(config).resolve(client, Link("Show", "https://site.example/show"))
+                labels = [choice.name for choice in fuzzy.call_args.kwargs["choices"]]
+        self.assertEqual("https://cdn.example/ep2.mp4", media.url)
+        self.assertIn("https://site.example/season/v/2", calls)
+        self.assertIn("https://site.example/season/v/3", calls)
+        self.assertNotIn("https://site.example/season/v2", calls)
+        self.assertIn("Open episode page 3", labels)
+        self.assertEqual(1, labels.count("Epi 1"))
+        self.assertEqual(3, len(labels))
+
+    async def test_pagination_triggered_by_choices_without_folder_entries(self):
+        calls = []
+
+        def handler(request):
+            calls.append(str(request.url))
+            if request.url.path == "/start" and not request.url.query:
+                return httpx.Response(200, text="""<div class=dlink><a href='/e1'>Epi 1</a></div>
+                    <div class=pagination><a href='?page=2'>2</a></div>""")
+            if request.url.path == "/start" and request.url.query:
+                return httpx.Response(200, text="<div class=dlink><a href='/e2'>Epi 2</a></div>")
+            if request.url.path == "/e2":
+                return httpx.Response(302, headers={"Location": "https://cdn.example/e2.mp4"})
+            raise AssertionError(f"Unexpected request: {request.url}")
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = Config(Path(directory) / "missing", Path(directory) / "cache")
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                with patch("src.search.inquirer.fuzzy") as fuzzy:
+                    fuzzy.return_value.execute_async = AsyncMock(return_value=1)
+                    media = await Search(config).resolve(client, Link("Show", "https://site.example/start"))
+                labels = [choice.name for choice in fuzzy.call_args.kwargs["choices"]]
+        self.assertEqual("https://cdn.example/e2.mp4", media.url)
+        self.assertIn("https://site.example/start?page=2", calls)
+        self.assertEqual(["Epi 1", "Epi 2"], labels)
+
+    async def test_complete_paginated_choices_are_cached(self):
+        calls = []
+
+        def handler(request):
+            calls.append(str(request.url))
+            path = request.url.path
+            if path == "/show":
+                return httpx.Response(200, text="<div class=f><a href='/season/v'>Season 01</a></div>")
+            if path == "/season/v":
+                return httpx.Response(200, text="""<div class=dlink><a href='/ep1'>Epi 1</a></div>
+                    <div class=pagination><a href='/season/v/2'>2</a></div>""")
+            if path == "/season/v/2":
+                return httpx.Response(200, text="<div class=dlink><a href='/ep2'>Epi 2</a></div>")
+            if path == "/ep2":
+                return httpx.Response(302, headers={"Location": "https://cdn.example/ep2.mp4"})
+            raise AssertionError(f"Unexpected request: {request.url}")
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = Config(Path(directory) / "missing", Path(directory) / "cache")
+            search = Search(config)
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                with patch("src.search.inquirer.fuzzy") as fuzzy:
+                    fuzzy.return_value.execute_async = AsyncMock(return_value=1)
+                    first = await search.resolve(client, Link("Show", "https://site.example/show"))
+                    second = await search.resolve(client, Link("Show", "https://site.example/show"))
+        self.assertEqual(first.url, second.url)
+        self.assertEqual(1, calls.count("https://site.example/season/v/2"))
+
+
 if __name__ == "__main__":
     unittest.main()

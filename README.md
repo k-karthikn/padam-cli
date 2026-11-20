@@ -46,7 +46,7 @@ padam-cli list-latest
 padam-cli list-dubbed
 ```
 
-Searches are case-insensitive. A four-digit year narrows the catalogue; it is required for titles that start with a number or Tamil letter. Download is the default action, and `--play` launches `mpv`. The app displays the available movie, quality, episode and server choices interactively, including episodes on later pages of a season. `padam-cli --help` lists all options without accessing the network.
+Searches are case-insensitive. A four-digit year narrows the catalogue; it is required for titles that start with a number or Tamil letter. Download is the default action, and `--play` launches `mpv`. The app displays the available movie, quality, episode and server choices interactively, including episodes on later pages of a season. It collects every episode/file page in a listing before prompting; if some pages fail, they remain available as `Open episode page N` choices instead of disappearing. Resolved media URLs are canonicalized (spaces encoded, existing escapes and query tokens preserved) before being handed to `mpv`, `yt-dlp`, `ffmpeg` or the browser. `padam-cli --help` lists all options without accessing the network.
 
 ## Source configuration
 
