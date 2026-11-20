@@ -1,0 +1,271 @@
+name: Release
+
+# This repository's default branch is `master`. Both branch names are handled,
+# and the bump commit is pushed back to whichever branch triggered the run.
+# Commits made by the bot (and [skip ci] commits) do not start a new run.
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Auto-increment version & tag
+    if: github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip ci]')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+      bump: ${{ steps.bump.outputs.bump }}
+    steps:
+      - name: Checkout with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Read version, bump it and update version files
+        id: bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+          import tomllib
+
+          pyproject = Path("pyproject.toml")
+          current = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
+          match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", current)
+          if not match:
+              raise SystemExit(f"Unsupported version format in pyproject.toml: {current!r}")
+          major, minor, patch = (int(part) for part in match.groups())
+
+          # The commit that triggered this run decides the bump type.
+          message = subprocess.check_output(["git", "log", "-1", "--pretty=%B"], text=True).lower()
+          if "[major]" in message:
+              major, minor, patch = major + 1, 0, 0
+              bump = "major"
+          elif "[minor]" in message:
+              major, minor, patch = major, minor + 1, 0
+              bump = "minor"
+          else:
+              patch += 1
+              bump = "patch"
+
+          # Never re-use an existing tag (makes re-runs and out-of-sync tags safe).
+          def tag_exists(version: str) -> bool:
+              return subprocess.run(
+                  ["git", "ls-remote", "--exit-code", "--tags", "origin", f"refs/tags/v{version}"],
+                  stdout=subprocess.DEVNULL,
+                  stderr=subprocess.DEVNULL,
+              ).returncode == 0
+
+          while tag_exists(f"{major}.{minor}.{patch}"):
+              patch += 1
+
+          new_version = f"{major}.{minor}.{patch}"
+          new_tag = f"v{new_version}"
+
+          # Three places in this project carry the version. Fail loudly if any
+          # of these patterns ever stops matching instead of silently releasing
+          # an inconsistent version.
+          def replace(path: str, pattern: str, replacement: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              updated, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
+              if count != 1 or updated == text:
+                  raise SystemExit(f"Could not update version in {path}; pattern no longer matches")
+              file.write_text(updated, encoding="utf-8")
+
+          replace("pyproject.toml", r'^(\s*version\s*=\s*")[^"]+(")', rf"\g<1>{new_version}\g<2>")
+          replace("src/config.py", r"padam-cli/\d+\.\d+\.\d+", f"padam-cli/{new_version}")
+          replace("PKGBUILD", r"^(pkgver=)[^\s]+", rf"\g<1>{new_version}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
+              out.write(f"version={new_version}\n")
+              out.write(f"tag={new_tag}\n")
+              out.write(f"bump={bump}\n")
+          print(f"{current} -> {new_tag} ({bump} bump)")
+          PY
+
+      - name: Commit bump, push branch and tag
+        shell: bash
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml src/config.py PKGBUILD
+          if git diff --cached --quiet; then
+            echo "No version changes staged; aborting." >&2
+            exit 1
+          fi
+          git commit -m "chore(release): ${TAG} [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+          echo "Pushed $TAG"
+
+  build:
+    name: Build ${{ matrix.target }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            runner: ubuntu-latest
+            suffix: linux-x86_64
+            ext: ""
+            image: quay.io/pypa/manylinux_2_28_x86_64
+          - target: linux-aarch64
+            runner: ubuntu-24.04-arm
+            suffix: linux-aarch64
+            ext: ""
+            image: quay.io/pypa/manylinux_2_28_aarch64
+          - target: windows-x86_64
+            runner: windows-latest
+            suffix: windows-x86_64
+            ext: ".exe"
+            image: ""
+          - target: termux-aarch64
+            runner: ubuntu-latest
+            suffix: termux-aarch64
+            ext: ""
+            image: termux/termux-docker:aarch64
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Resolve binary and artifact names
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_NAME="padam-cli-${{ needs.version.outputs.version }}-${{ matrix.suffix }}"
+          echo "BASE_NAME=$BASE_NAME" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME=${BASE_NAME}${{ matrix.ext }}" >> "$GITHUB_ENV"
+          echo "ARTIFACT_PATH=dist/${BASE_NAME}${{ matrix.ext }}" >> "$GITHUB_ENV"
+
+      # manylinux_2_28 = glibc 2.28, so both Linux binaries also run on older
+      # distros (Debian 10+, Ubuntu 18.10+, RHEL 8+). PyInstaller builds with
+      # the container's own Python, so no host setup-python is needed here.
+      - name: Build Linux binary in manylinux container (glibc 2.28)
+        if: matrix.target == 'linux-x86_64' || matrix.target == 'linux-aarch64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/work" -w /work \
+            -e BASE_NAME="$BASE_NAME" \
+            "${{ matrix.image }}" bash -c '
+              set -euxo pipefail
+              PY=/opt/python/cp314-cp314/bin/python
+              if [ ! -x "$PY" ]; then PY=/opt/python/cp313-cp313/bin/python; fi
+              "$PY" -m pip install --upgrade pip setuptools wheel
+              "$PY" -m pip install . "pyinstaller>=6.21.0"
+              "$PY" -m PyInstaller --clean --noconfirm --onefile --name "$BASE_NAME" main.py
+              test -f "dist/$BASE_NAME"
+            '
+
+      - name: Set up Python (from .python-version) for Windows
+        if: matrix.target == 'windows-x86_64'
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Build Windows x86_64 binary
+        if: matrix.target == 'windows-x86_64'
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install . "pyinstaller>=6.21.0"
+          python -m PyInstaller --clean --noconfirm --onefile --name "$env:BASE_NAME" main.py
+          if (-not (Test-Path "dist\$($env:BASE_NAME).exe")) { throw "Binary was not produced" }
+
+      - name: Register QEMU for aarch64
+        if: matrix.target == 'termux-aarch64'
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      # Termux is Bionic (not glibc). PyInstaller must compile its bootloader
+      # with Termux clang and link the SysV semaphore shim; the prebuilt Linux
+      # bootloader would not work here. The `ldd` package is required because
+      # PyInstaller calls it at import time and to resolve native libraries.
+      - name: Build Android / Termux aarch64 binary (Bionic)
+        if: matrix.target == 'termux-aarch64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod -R a+rwX "$GITHUB_WORKSPACE"
+          docker run --rm --privileged --platform linux/arm64 \
+            -v "$GITHUB_WORKSPACE:/work" -w /work \
+            -e BASE_NAME="$BASE_NAME" \
+            termux/termux-docker:aarch64 \
+            /entrypoint.sh bash -c '
+              set -euxo pipefail
+              export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+              export TMPDIR="$PREFIX/tmp"
+              mkdir -p "$TMPDIR"
+              pkg update -y
+              pkg install -y python python-lxml ldd clang binutils make pkg-config \
+                libxml2 libxslt libandroid-sysv-semaphore
+              export LDFLAGS="-landroid-sysv-semaphore"
+              export PYINSTALLER_COMPILE_BOOTLOADER=1
+              python -m pip install --upgrade pip setuptools wheel
+              python -m pip install --no-binary=pyinstaller "pyinstaller>=6.21.0"
+              python -m pip install "beautifulsoup4>=4.15.0" "httpx>=0.28.1" \
+                "inquirerpy>=0.3.4" "rich>=15.0.0"
+              python -m pip install --no-deps .
+              python -m PyInstaller --clean --noconfirm --onefile --name "$BASE_NAME" main.py
+              test -f "dist/$BASE_NAME"
+            '
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_PATH }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: [version, build]
+    if: needs.version.result == 'success' && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all four binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create release and attach binaries
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          ls -lh release-assets
+          gh release create "$TAG" \
+            --title "padam-cli $VERSION" \
+            --generate-notes \
+            --verify-tag \
+            release-assets/*
