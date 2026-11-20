@@ -1,6 +1,6 @@
 # padam-cli
 
-A terminal app for finding Tamil and Tamil dubbed movie releases on supported public sources. It lets you choose a release, quality and server, then open the media URL in a browser, download it with `yt-dlp` or `ffmpeg`, or play it with `mpv`.
+A terminal app for finding Tamil and Tamil dubbed movie releases on supported public sources. It lets you choose a release, quality and server, then open the media URL in a browser, download it with `yt-dlp` or `ffmpeg`, or play it with `vlc`.
 
 ## Install
 
@@ -26,7 +26,7 @@ On Termux, install Python and the native libraries needed to build `lxml` before
 pkg install python clang libxml2 libxslt
 ```
 
-`mpv`, `ffmpeg` and `yt-dlp` are optional external programs. Install the ones you intend to use. Browser handoff is available without them, though some servers require the source's referer or cookies and may not work in a separate browser.
+`vlc`, `ffmpeg` and `yt-dlp` are optional external programs. Install the ones you intend to use. Browser handoff is available without them, though some servers require the source's referer or cookies and may not work in a separate browser.
 
 To build a standalone executable on Linux or Windows, run `uv sync` followed by:
 
@@ -46,7 +46,7 @@ padam-cli list-latest
 padam-cli list-dubbed
 ```
 
-Searches are case-insensitive. A four-digit year narrows the catalogue; it is required for titles that start with a number or Tamil letter. Download is the default action, and `--play` launches `mpv`. The app displays the available movie, quality, episode and server choices interactively, including episodes on later pages of a season. It collects every episode/file page in a listing before prompting; if some pages fail, they remain available as `Open episode page N` choices instead of disappearing. Resolved media URLs are canonicalized (spaces encoded, existing escapes and query tokens preserved) before being handed to `mpv`, `yt-dlp`, `ffmpeg` or the browser. `padam-cli --help` lists all options without accessing the network.
+Searches are case-insensitive. A four-digit year narrows the catalogue; it is required for titles that start with a number or Tamil letter. Download is the default action, and `--play` launches `vlc`. The app displays the available movie, quality, episode and server choices interactively, including episodes on later pages of a season. It collects every episode/file page in a listing before prompting; if some pages fail, they remain available as `Open episode page N` choices instead of disappearing. Resolved media URLs are canonicalized (spaces encoded, existing escapes and query tokens preserved) before being handed to `vlc`, `yt-dlp`, `ffmpeg` or the browser. VLC 3.x only accepts dedicated `http-user-agent` and `http-referrer` HTTP options, passed as per-item `:name=value` arguments; it cannot send a `Cookie` header from the command line, so use the browser or download option for sources that require cookies. `padam-cli --help` lists all options without accessing the network.
 
 ## Source configuration
 

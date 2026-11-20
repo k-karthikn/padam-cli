@@ -14,7 +14,7 @@ This guide outlines our development workflow and standards to help you get start
 - **Package Manager**: [uv](https://docs.astral.sh/uv/) (recommended) or standard Python `pip` and `venv`.
 - **Git**: Installed and configured.
 - **Optional Tools**:
-  - `mpv`: For streaming playback (`--play`).
+  - `vlc`: For streaming playback (`--play`).
   - `ffmpeg` / `yt-dlp`: For media downloads.
   - *Termux/Linux build requirements* (if compiling `lxml` from source): `clang`, `libxml2`, `libxslt`.
 

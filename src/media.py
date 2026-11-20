@@ -60,14 +60,37 @@ class Media:
         return [f"{key}: {value}" for key, value in self.headers.items()
                 if "\r" not in key + value and "\n" not in key + value]
 
-    def _mpv_header_lines(self) -> list[str]:
-        lines = []
+    def _vlc_options(self) -> list[str]:
+        """Translate scraper headers into VLC 3.x per-item HTTP access options.
+
+        VLC does not understand mpv's comma-separated `--http-header-fields`.
+        Its HTTP access module exposes only dedicated options for the two
+        headers used here; arbitrary headers such as Cookie cannot be injected
+        from the command line and are reported instead of being silently lost.
+
+        These are VLC *per-item* options (``:name=value``) and must be appended
+        after the media URL. Global ``--http-user-agent`` is ineffective: the
+        VLC CLI calls ``libvlc_new()``, which overwrites that variable with its
+        own default. Item-level variables take precedence over inherited ones,
+        so the per-item form works for both headers.
+        """
+        supported = {
+            "user-agent": ":http-user-agent=",
+            "referer": ":http-referrer=",
+        }
+        options = []
         for key, value in self.headers.items():
-            if "," in value:
-                console.print(f"[yellow]Omitting {key} header for mpv because its value contains a comma.[/yellow]")
-            elif "\r" not in key + value and "\n" not in key + value:
-                lines.append(f"{key}: {value}")
-        return lines
+            if "\r" in key + value or "\n" in key + value:
+                continue
+            flag = supported.get(key.casefold())
+            if flag is None:
+                console.print(
+                    f"[yellow]VLC cannot pass the {key} header; skipping it. "
+                    "Use the browser or download option if the stream requires it.[/yellow]"
+                )
+                continue
+            options.append(flag + value)
+        return options
 
     def download(self) -> bool:
         options = [("yt-dlp", "yt-dlp"), ("ffmpeg", "ffmpeg"), ("Browser", None)]
@@ -106,16 +129,12 @@ class Media:
             return False
 
     def stream(self) -> bool:
-        if not shutil.which("mpv"):
-            console.print("[red]mpv is not installed. Copy this URL into a player:[/red]")
+        if not shutil.which("vlc"):
+            console.print("[red]vlc is not installed. Copy this URL into a player:[/red]")
             console.print(self.url)
             return False
-        command = ["mpv"]
-        if self.headers:
-            lines = self._mpv_header_lines()
-            if lines:
-                command.append("--http-header-fields=" + ",".join(lines))
-        command.append(self.url)
+        command = ["vlc", self.url]
+        command.extend(self._vlc_options())
         try:
             subprocess.run(command, check=True)
             return True
