@@ -28,11 +28,13 @@ class CatalogueCache:
             data = json.loads(path.read_text(encoding="utf-8"))
             if data["url"] != url or not 0 <= time.time() - data["saved_at"] < self.TTL_SECONDS:
                 return None
-            links = [Link(**item) for item in data["links"]]
-            if any(secure_url(link.url, link.url) != link.url or
-                   (link.referer and secure_url(link.referer, link.referer) != link.referer)
-                   for link in links):
-                return None
+            links = []
+            for item in data["links"]:
+                url = secure_url(item["url"], item["url"])
+                referer = secure_url(item["referer"], item["referer"]) if item.get("referer") else ""
+                if url is None or referer is None:
+                    return None
+                links.append(Link(item["title"], url, referer))
             return links
         except (OSError, ValueError, KeyError, TypeError):
             return None

@@ -34,7 +34,13 @@ class Page:
     disposition: str = ""
 
     @property
+    def is_hls(self) -> bool:
+        return "mpegurl" in self.media_type or urlsplit(self.url).path.lower().endswith(".m3u8")
+
+    @property
     def is_media(self) -> bool:
+        if self.is_hls or self.media_type == "text/plain":
+            return False
         if self.media_type in {"text/html", "application/xhtml+xml"}:
             return False
         path = unquote(urlsplit(self.url).path).lower()
@@ -50,7 +56,7 @@ class Scraper:
     TRANSIENT_STATUS = {429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
 
     async def fetch_page(self, client: httpx.AsyncClient, url: str, referer: str = "") -> Page:
-        if secure_url(url, url) != url:
+        if secure_url(url, url) is None:
             raise ScrapeError(url, "only HTTPS source links are supported")
         for attempt in range(2):
             try:
@@ -85,8 +91,10 @@ class Scraper:
                     continue
                 response.raise_for_status()
                 final_url = str(response.url)
-                if secure_url(final_url, final_url) != final_url:
+                canonical = secure_url(final_url, final_url)
+                if canonical is None:
                     raise ScrapeError(url, "source redirected to an insecure URL")
+                final_url = canonical
                 media_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
                 page = Page(final_url, None, media_type,
                             response.headers.get("content-disposition", ""))
