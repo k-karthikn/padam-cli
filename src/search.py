@@ -13,7 +13,7 @@ from rich.console import Console
 from src.cache import CatalogueCache
 from src.config import Config
 from src.scraper import Link, ScrapeError, Scraper
-from src.utils import normalized, secure_url
+from src.utils import canonical_url, normalized, secure_url
 
 
 console = Console()
@@ -200,8 +200,14 @@ class Search:
                     raise ScrapeError(current.url, "download links form a loop")
                 visited.add(current.url)
                 page = await self.scraper.fetch_page(client, current.url, current.referer)
+                if page.is_hls:
+                    raise ScrapeError(page.url,
+                                      "This server offers HLS streaming only. Choose a regular movie file.")
                 if page.is_media:
-                    return Link(current.title, page.url, current.referer)
+                    # Defensive canonicalization protects against legacy cache entries
+                    # and callers that still hand us an unencoded media URL.
+                    media_url = canonical_url(page.url) or page.url
+                    return Link(current.title, media_url, current.referer)
                 choices = self.scraper.choices(page, self.config.junks)
                 pages = self.scraper.pages(page)
                 if pages and choices:

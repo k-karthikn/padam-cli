@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from src.config import Config
-from src.scraper import Link, ScrapeError
+from src.scraper import Link, Page, ScrapeError
 from src.search import Search, choose_link
 
 
@@ -280,6 +280,55 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
                     second = await search.resolve(client, Link("Show", "https://site.example/show"))
         self.assertEqual(first.url, second.url)
         self.assertEqual(1, calls.count("https://site.example/season/v/2"))
+
+    async def test_hls_server_is_rejected_and_backup_server_is_used(self):
+        def handler(request):
+            if request.url.path == "/start":
+                return httpx.Response(200, text="""<div class=dlink>
+                    <a href='/hls'>Download Server 1</a><a href='/file'>Download Server 2</a></div>""")
+            if request.url.path == "/hls":
+                return httpx.Response(200, headers={"Content-Type": "application/vnd.apple.mpegurl"},
+                                      text="#EXTM3U\n#EXT-X-ENDLIST\n")
+            if request.url.path == "/file":
+                return httpx.Response(200, headers={"Content-Type": "video/mp4"}, content=b"x")
+            raise AssertionError(f"Unexpected request: {request.url}")
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = Config(Path(directory) / "missing", Path(directory) / "cache")
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                with patch("src.search.inquirer.fuzzy") as fuzzy:
+                    fuzzy.return_value.execute_async = AsyncMock(return_value=0)
+                    media = await Search(config).resolve(client, Link("Movie", "https://site.example/start"))
+        self.assertEqual("https://site.example/file", media.url)
+
+    async def test_hls_only_server_reports_clear_error(self):
+        def handler(request):
+            if request.url.path == "/start":
+                return httpx.Response(200, text="<div class=dlink><a href='/hls'>HLS server</a></div>")
+            return httpx.Response(200, headers={"Content-Type": "application/x-mpegurl"},
+                                  text="#EXTM3U\n")
+
+        with tempfile.TemporaryDirectory() as directory:
+            config = Config(Path(directory) / "missing", Path(directory) / "cache")
+            async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+                with self.assertRaisesRegex(ScrapeError, "HLS streaming only"):
+                    await Search(config).resolve(client, Link("Movie", "https://site.example/start"))
+
+    async def test_resolve_canonicalizes_legacy_raw_space_media_url(self):
+        raw_page = Page("https://cdn.example/Tamil 2026 Movies/Epi 04).mp4?htag=a&etag=b",
+                        None, "video/mp4")
+        with tempfile.TemporaryDirectory() as directory:
+            config = Config(Path(directory) / "missing", Path(directory) / "cache")
+            search = Search(config)
+            async with httpx.AsyncClient(transport=httpx.MockTransport(
+                    lambda _: httpx.Response(200))) as client:
+                with patch.object(search.scraper, "fetch_page",
+                                  new=AsyncMock(return_value=raw_page)):
+                    media = await search.resolve(client, Link("Movie", "https://site.example/start"))
+        self.assertEqual(
+            "https://cdn.example/Tamil%202026%20Movies/Epi%2004).mp4?htag=a&etag=b",
+            media.url,
+        )
 
 
 if __name__ == "__main__":
