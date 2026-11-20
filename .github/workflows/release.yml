@@ -356,6 +356,13 @@ jobs:
     if: needs.version.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     steps:
+      # `gh release create --verify-tag` verifies the tag with local git, so
+      # this job needs a checkout that includes tags.
+      - name: Checkout with tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Download all four binaries
         uses: actions/download-artifact@v4
         with:
