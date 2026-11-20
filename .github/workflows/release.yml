@@ -154,15 +154,19 @@ jobs:
           git commit -m "chore(release): ${TAG} [skip ci]"
           git push origin "HEAD:${GITHUB_REF_NAME}"
 
-      # A git push made with GITHUB_TOKEN is rejected when the tagged history
-      # adds/changes .github/workflows/* (no `workflows` scope is available to
-      # GITHUB_TOKEN). The Git refs API does not go through that receive hook,
-      # and this step is safe to repeat: it verifies an existing tag instead of
-      # overwriting it.
+      # GitHub requires `workflows: write` when a token creates a tag whose new
+      # commit range changes .github/workflows/* (see the 2023-11-02 changelog,
+      # "Enforcing workflow scope when creating a release"). GITHUB_TOKEN is a
+      # GitHub App token and can never be granted that scope via `permissions:`.
+      # Most releases do not touch workflow files and work with GITHUB_TOKEN;
+      # for those that do, set a RELEASE_TOKEN secret (PAT or GitHub App token
+      # with Contents: write + Workflows: write) or pre-create the tag yourself.
+      # This step is idempotent: an existing tag is verified, never moved.
       - name: Create (or verify) release tag via Git refs API
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          HAS_ELEVATED_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
           TAG: ${{ steps.bump.outputs.tag }}
           EXPECTED_COMMIT: ${{ inputs.release_commit }}
         run: |
@@ -192,6 +196,22 @@ jobs:
               --jq .sha)
             if ! gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
               -f ref="refs/tags/$TAG" -f sha="$TAG_SHA"; then
+              if [ "$HAS_ELEVATED_TOKEN" != "true" ]; then
+                cat >&2 <<'MSG'
+          Could not create the tag with GITHUB_TOKEN. If the new commit range changes
+          .github/workflows/*, GitHub requires `workflows: write`, which GITHUB_TOKEN
+          cannot have. Fix one of these ways:
+            1. Add a repository secret RELEASE_TOKEN containing a token with
+               Contents: write AND Workflows: write (fine-grained PAT scoped to this
+               repo, or a GitHub App installation token), then re-run this workflow.
+            2. Pre-create the tag with your own credentials:
+                 git fetch origin --tags
+                 git tag -a <TAG> -m "Release <TAG>" <COMMIT>
+                 git push origin <TAG>
+               then re-run with release_tag/release_commit set to the same values.
+          The failed ref creation is safe to retry; no tag was created or moved.
+          MSG
+              fi
               echo "Ref creation failed; re-checking for a concurrently created tag"
               verify_tag
             fi
@@ -337,7 +357,9 @@ jobs:
       - name: Create release and attach binaries
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # --verify-tag uses an existing ref, so GITHUB_TOKEN is normally
+          # enough; RELEASE_TOKEN is used when it was supplied for tagging.
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.version.outputs.tag }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
