@@ -9,6 +9,15 @@ on:
       - main
       - master
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Resume an existing release tag, e.g. v0.6.2. Leave empty for a normal bump."
+        required: false
+        type: string
+      release_commit:
+        description: "Expected full commit SHA when resuming (optional, otherwise HEAD)."
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -33,9 +42,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Read version, bump it and update version files
+      - name: Read version, resolve tag and update version files
         id: bump
         shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -45,6 +56,21 @@ jobs:
           from pathlib import Path
           import tomllib
 
+          def git(args):
+              proc = subprocess.run(["git", *args], capture_output=True, text=True)
+              if proc.returncode != 0:
+                  raise SystemExit(
+                      f"git {' '.join(args)} failed with exit code {proc.returncode}: "
+                      f"{proc.stderr.strip() or '(no stderr)'}"
+                  )
+              return proc.stdout.strip()
+
+          def remote_tag_sha(ref):
+              # Do not use --exit-code: exit 2 means "no match", but 128 means
+              # an auth/network error. A clean lookup returns 0 either way.
+              lines = [line for line in git(["ls-remote", "--tags", "origin", ref]).splitlines() if line.strip()]
+              return lines[0].split()[0] if lines else None
+
           pyproject = Path("pyproject.toml")
           current = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
           match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", current)
@@ -52,55 +78,67 @@ jobs:
               raise SystemExit(f"Unsupported version format in pyproject.toml: {current!r}")
           major, minor, patch = (int(part) for part in match.groups())
 
-          # The commit that triggered this run decides the bump type.
-          message = subprocess.check_output(["git", "log", "-1", "--pretty=%B"], text=True).lower()
-          if "[major]" in message:
-              major, minor, patch = major + 1, 0, 0
-              bump = "major"
-          elif "[minor]" in message:
-              major, minor, patch = major, minor + 1, 0
-              bump = "minor"
+          resume_tag = os.environ.get("RELEASE_TAG", "").strip()
+          if resume_tag:
+              # Recovery path: version files were already bumped and committed.
+              # Reuse that exact version; never bump it a second time.
+              if not re.fullmatch(r"v\d+\.\d+\.\d+", resume_tag):
+                  raise SystemExit(f"Invalid release_tag: {resume_tag!r}")
+              if resume_tag != f"v{current}":
+                  raise SystemExit(
+                      f"release_tag {resume_tag} does not match version files ({current}); "
+                      "refusing to resume with a mismatched version"
+                  )
+              new_version, new_tag, bump, resume = current, resume_tag, "resume", "true"
           else:
-              patch += 1
-              bump = "patch"
+              # The commit that triggered this run decides the bump type.
+              message = git(["log", "-1", "--pretty=%B"]).lower()
+              if "[major]" in message:
+                  major, minor, patch = major + 1, 0, 0
+                  bump = "major"
+              elif "[minor]" in message:
+                  major, minor, patch = major, minor + 1, 0
+                  bump = "minor"
+              else:
+                  patch += 1
+                  bump = "patch"
 
-          # Never re-use an existing tag (makes re-runs and out-of-sync tags safe).
-          def tag_exists(version: str) -> bool:
-              return subprocess.run(
-                  ["git", "ls-remote", "--exit-code", "--tags", "origin", f"refs/tags/v{version}"],
-                  stdout=subprocess.DEVNULL,
-                  stderr=subprocess.DEVNULL,
-              ).returncode == 0
+              for _ in range(100):
+                  if remote_tag_sha(f"refs/tags/v{major}.{minor}.{patch}") is None:
+                      break
+                  patch += 1
+              else:
+                  raise SystemExit("Could not find a free patch version after 100 attempts")
 
-          while tag_exists(f"{major}.{minor}.{patch}"):
-              patch += 1
+              new_version = f"{major}.{minor}.{patch}"
+              new_tag = f"v{new_version}"
+              resume = "false"
 
-          new_version = f"{major}.{minor}.{patch}"
-          new_tag = f"v{new_version}"
+              # Three places in this project carry the version. Fail loudly if
+              # any pattern stops matching instead of releasing an inconsistent
+              # version.
+              def replace(path: str, pattern: str, replacement: str) -> None:
+                  file = Path(path)
+                  text = file.read_text(encoding="utf-8")
+                  updated, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
+                  if count != 1 or updated == text:
+                      raise SystemExit(f"Could not update version in {path}; pattern no longer matches")
+                  file.write_text(updated, encoding="utf-8")
 
-          # Three places in this project carry the version. Fail loudly if any
-          # of these patterns ever stops matching instead of silently releasing
-          # an inconsistent version.
-          def replace(path: str, pattern: str, replacement: str) -> None:
-              file = Path(path)
-              text = file.read_text(encoding="utf-8")
-              updated, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
-              if count != 1 or updated == text:
-                  raise SystemExit(f"Could not update version in {path}; pattern no longer matches")
-              file.write_text(updated, encoding="utf-8")
-
-          replace("pyproject.toml", r'^(\s*version\s*=\s*")[^"]+(")', rf"\g<1>{new_version}\g<2>")
-          replace("src/config.py", r"padam-cli/\d+\.\d+\.\d+", f"padam-cli/{new_version}")
-          replace("PKGBUILD", r"^(pkgver=)[^\s]+", rf"\g<1>{new_version}")
+              replace("pyproject.toml", r'^(\s*version\s*=\s*")[^"]+(")', rf"\g<1>{new_version}\g<2>")
+              replace("src/config.py", r"padam-cli/\d+\.\d+\.\d+", f"padam-cli/{new_version}")
+              replace("PKGBUILD", r"^(pkgver=)[^\s]+", rf"\g<1>{new_version}")
 
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out:
               out.write(f"version={new_version}\n")
               out.write(f"tag={new_tag}\n")
               out.write(f"bump={bump}\n")
-          print(f"{current} -> {new_tag} ({bump} bump)")
+              out.write(f"resume={resume}\n")
+          print(f"{current} -> {new_tag} ({bump})")
           PY
 
-      - name: Commit bump, push branch and tag
+      - name: Commit bump and push branch
+        if: steps.bump.outputs.resume != 'true'
         shell: bash
         env:
           TAG: ${{ steps.bump.outputs.tag }}
@@ -115,9 +153,50 @@ jobs:
           fi
           git commit -m "chore(release): ${TAG} [skip ci]"
           git push origin "HEAD:${GITHUB_REF_NAME}"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
-          echo "Pushed $TAG"
+
+      # A git push made with GITHUB_TOKEN is rejected when the tagged history
+      # adds/changes .github/workflows/* (no `workflows` scope is available to
+      # GITHUB_TOKEN). The Git refs API does not go through that receive hook,
+      # and this step is safe to repeat: it verifies an existing tag instead of
+      # overwriting it.
+      - name: Create (or verify) release tag via Git refs API
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.bump.outputs.tag }}
+          EXPECTED_COMMIT: ${{ inputs.release_commit }}
+        run: |
+          set -euo pipefail
+          COMMIT="${EXPECTED_COMMIT:-$(git rev-parse HEAD)}"
+          verify_tag() {
+            git fetch --force origin "refs/tags/$TAG:refs/tags/$TAG" >/dev/null 2>&1 || true
+            if ! git show-ref --verify --quiet "refs/tags/$TAG"; then
+              echo "Tag $TAG does not exist remotely after creation attempt" >&2
+              exit 1
+            fi
+            ACTUAL=$(git rev-parse "$TAG^{commit}")
+            if [ "$ACTUAL" != "$COMMIT" ]; then
+              echo "Tag $TAG points to $ACTUAL, expected $COMMIT; refusing to move it" >&2
+              exit 1
+            fi
+          }
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists remotely; verifying target"
+            verify_tag
+          else
+            TAG_SHA=$(gh api -X POST "repos/$GITHUB_REPOSITORY/git/tags" \
+              -f tag="$TAG" \
+              -f message="Release $TAG" \
+              -f object="$COMMIT" \
+              -f type=commit \
+              --jq .sha)
+            if ! gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$TAG" -f sha="$TAG_SHA"; then
+              echo "Ref creation failed; re-checking for a concurrently created tag"
+              verify_tag
+            fi
+          fi
+          echo "Release tag $TAG is at $COMMIT"
 
   build:
     name: Build ${{ matrix.target }}
