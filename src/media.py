@@ -9,6 +9,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from rich.console import Console
+from src.utils import canonical_url
 
 
 console = Console()
@@ -17,7 +18,7 @@ console = Console()
 class Media:
     def __init__(self, url: str, title: str | None = None,
                  download_dir: str = "~/Downloads/", headers: dict | None = None):
-        self.url = url
+        self.url = canonical_url(url) or url
         self.title = title or "Movie"
         self.download_dir = Path(download_dir).expanduser()
         self.headers = headers or {}
@@ -58,6 +59,15 @@ class Media:
     def _header_lines(self) -> list[str]:
         return [f"{key}: {value}" for key, value in self.headers.items()
                 if "\r" not in key + value and "\n" not in key + value]
+
+    def _mpv_header_lines(self) -> list[str]:
+        lines = []
+        for key, value in self.headers.items():
+            if "," in value:
+                console.print(f"[yellow]Omitting {key} header for mpv because its value contains a comma.[/yellow]")
+            elif "\r" not in key + value and "\n" not in key + value:
+                lines.append(f"{key}: {value}")
+        return lines
 
     def download(self) -> bool:
         options = [("yt-dlp", "yt-dlp"), ("ffmpeg", "ffmpeg"), ("Browser", None)]
@@ -102,7 +112,9 @@ class Media:
             return False
         command = ["mpv"]
         if self.headers:
-            command.append("--http-header-fields=" + ",".join(self._header_lines()))
+            lines = self._mpv_header_lines()
+            if lines:
+                command.append("--http-header-fields=" + ",".join(lines))
         command.append(self.url)
         try:
             subprocess.run(command, check=True)

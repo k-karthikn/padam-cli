@@ -1,21 +1,33 @@
 """Small source-independent validation helpers."""
 
 import re
+import httpx
 from urllib.parse import urljoin, urlsplit
 
+
+def canonical_url(value: str) -> str | None:
+    if not isinstance(value, str) or not value or any(ord(c) < 32 for c in value):
+        return None
+    try:
+        parts = urlsplit(value)
+        if parts.scheme != "https" or not parts.hostname or parts.username or parts.password:
+            return None
+        _ = parts.port
+        path_query = re.sub(r"%(?![0-9A-Fa-f]{2})", "%25", parts.path + ("?" + parts.query if "?" in value.split("#",1)[0] else ""))
+        return str(httpx.URL(parts._replace(path=path_query.split("?",1)[0], query=path_query.split("?",1)[1] if "?" in path_query else "", fragment="").geturl()))
+    except (ValueError, httpx.InvalidURL):
+        return None
+
+def is_secure_url(url: str) -> bool:
+    return canonical_url(url) is not None
 
 def secure_url(base: str, href: str) -> str | None:
     if not isinstance(href, str) or not href or href.startswith("#") or any(ord(char) < 32 for char in href):
         return None
     try:
-        url = urljoin(base, href)
-        parts = urlsplit(url)
-        if parts.scheme != "https" or not parts.hostname or parts.username or parts.password:
-            return None
-        _ = parts.port
+        return canonical_url(urljoin(base, href))
     except ValueError:
         return None
-    return parts._replace(fragment="").geturl()
 
 
 def normalized(text: str) -> str:

@@ -2,7 +2,7 @@ import unittest
 
 import httpx
 
-from src.scraper import Link, ScrapeError, Scraper
+from src.scraper import Link, Page, ScrapeError, Scraper
 
 
 class ScraperTests(unittest.IsolatedAsyncioTestCase):
@@ -50,6 +50,33 @@ class ScraperTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(page.is_media)
         self.assertEqual("https://cdn.example/Nanban%20(2012).mp4?signature=abc", page.url)
         self.assertEqual(["https://site.example/gateway"], calls)
+
+    async def test_redirect_with_raw_spaces_is_canonicalized_without_fetching_media(self):
+        calls = []
+
+        def handler(request):
+            calls.append(str(request.url))
+            if request.url.path == "/gateway":
+                return httpx.Response(302, headers={"Location":
+                    "https://cdn.example/Tamil 2026 Movies/Sshhh Epi 04).mp4?htag=a&etag=b"})
+            raise AssertionError("The media response must not be opened while resolving")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler),
+                                     follow_redirects=True) as client:
+            page = await Scraper().fetch_page(client, "https://site.example/gateway")
+        self.assertTrue(page.is_media)
+        self.assertEqual(
+            "https://cdn.example/Tamil%202026%20Movies/Sshhh%20Epi%2004).mp4?htag=a&etag=b",
+            page.url,
+        )
+        self.assertEqual(["https://site.example/gateway"], calls)
+
+    async def test_hls_and_plain_text_are_not_media(self):
+        hls = Page("https://cdn.example/stream.m3u8", None, "application/vnd.apple.mpegurl")
+        self.assertTrue(hls.is_hls)
+        self.assertFalse(hls.is_media)
+        self.assertFalse(Page("https://cdn.example/stream", None, "text/plain").is_media)
+        self.assertTrue(Page("https://cdn.example/movie.mp4", None, "video/mp4").is_media)
 
     async def test_transient_timeout_is_retried_with_clear_error_if_exhausted(self):
         calls = []
