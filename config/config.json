@@ -1,6 +1,6 @@
 {
     "domains": {
-        "moviesda": "https://moviezda.me",
+        "moviesda": "https://moviezda.co",
         "isaidub": "https://isaiidub.com/"
     },
     "config_url": "https://raw.githubusercontent.com/k-karthikn/padam-cli/refs/heads/master/config/config.json",
